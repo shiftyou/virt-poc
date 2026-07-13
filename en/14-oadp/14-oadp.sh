@@ -227,10 +227,8 @@ EOF
 
     local id_output
     id_output=$(oc exec -n poc-garage "$garage_pod" -- /garage node id 2>&1 || true)
-    # "Node ID: <hex>" format
-    node_id=$(echo "$id_output" | grep -i "Node ID" | awk '{print $NF}')
-    # "<hex>@<addr>" format
-    [ -z "$node_id" ] && node_id=$(echo "$id_output" | grep -oE '[a-f0-9]{16,}' | head -1)
+    # Extract hex node ID before "@"
+    node_id=$(echo "$id_output" | grep -oE '[0-9a-f]+@' | head -1 | sed 's/@//')
 
     if [ -z "$node_id" ]; then
         print_error "Failed to get Garage node ID"
@@ -243,9 +241,27 @@ EOF
     oc exec -n poc-garage "$garage_pod" -- /garage layout apply --version 1 2>&1 || true
     print_ok "Garage layout configured"
 
+    # Create API key (Garage generates GK-prefixed access key + secret)
+    local key_output gk_access gk_secret
+    key_output=$(oc exec -n poc-garage "$garage_pod" -- /garage key create garageadmin 2>&1 || true)
+    gk_access=$(echo "$key_output" | grep -i "Key ID" | awk '{print $NF}')
+    gk_secret=$(echo "$key_output" | grep -i "Secret" | awk '{print $NF}')
+
+    if [ -z "$gk_access" ] || [ -z "$gk_secret" ]; then
+        print_warn "Key creation output:"
+        echo "$key_output"
+        print_warn "Could not parse Garage key — using defaults from Secret"
+    else
+        print_info "Garage key ID: ${gk_access}"
+        # Update Secret with actual Garage-generated credentials
+        oc create secret generic garage-credentials -n poc-garage \
+            --from-literal=accessKey="$gk_access" \
+            --from-literal=secretKey="$gk_secret" \
+            --dry-run=client -o yaml | oc apply -f - 2>/dev/null
+    fi
+
+    # Create bucket and grant access
     oc exec -n poc-garage "$garage_pod" -- /garage bucket create velero 2>&1 || true
-    oc exec -n poc-garage "$garage_pod" -- /garage key import --yes garageadmin garageadmin 2>&1 || \
-        oc exec -n poc-garage "$garage_pod" -- /garage key create --name garageadmin 2>&1 || true
     oc exec -n poc-garage "$garage_pod" -- /garage bucket allow --read --write velero --key garageadmin 2>&1 || true
     print_ok "Bucket 'velero' created and access granted"
 

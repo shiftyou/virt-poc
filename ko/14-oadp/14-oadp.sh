@@ -227,10 +227,8 @@ EOF
 
     local id_output
     id_output=$(oc exec -n poc-garage "$garage_pod" -- /garage node id 2>&1 || true)
-    # "Node ID: <hex>" 형식
-    node_id=$(echo "$id_output" | grep -i "Node ID" | awk '{print $NF}')
-    # "<hex>@<addr>" 형식
-    [ -z "$node_id" ] && node_id=$(echo "$id_output" | grep -oE '[a-f0-9]{16,}' | head -1)
+    # "@" 앞의 hex 노드 ID 추출
+    node_id=$(echo "$id_output" | grep -oE '[0-9a-f]+@' | head -1 | sed 's/@//')
 
     if [ -z "$node_id" ]; then
         print_error "Garage 노드 ID를 가져올 수 없습니다"
@@ -243,9 +241,27 @@ EOF
     oc exec -n poc-garage "$garage_pod" -- /garage layout apply --version 1 2>&1 || true
     print_ok "Garage 레이아웃 구성 완료"
 
+    # API 키 생성 (Garage가 GK 접두사 access key + secret 생성)
+    local key_output gk_access gk_secret
+    key_output=$(oc exec -n poc-garage "$garage_pod" -- /garage key create garageadmin 2>&1 || true)
+    gk_access=$(echo "$key_output" | grep -i "Key ID" | awk '{print $NF}')
+    gk_secret=$(echo "$key_output" | grep -i "Secret" | awk '{print $NF}')
+
+    if [ -z "$gk_access" ] || [ -z "$gk_secret" ]; then
+        print_warn "키 생성 출력:"
+        echo "$key_output"
+        print_warn "Garage 키 파싱 실패 — Secret의 기본값 사용"
+    else
+        print_info "Garage 키 ID: ${gk_access}"
+        # 실제 Garage 생성 자격 증명으로 Secret 업데이트
+        oc create secret generic garage-credentials -n poc-garage \
+            --from-literal=accessKey="$gk_access" \
+            --from-literal=secretKey="$gk_secret" \
+            --dry-run=client -o yaml | oc apply -f - 2>/dev/null
+    fi
+
+    # 버킷 생성 및 접근 권한 부여
     oc exec -n poc-garage "$garage_pod" -- /garage bucket create velero 2>&1 || true
-    oc exec -n poc-garage "$garage_pod" -- /garage key import --yes garageadmin garageadmin 2>&1 || \
-        oc exec -n poc-garage "$garage_pod" -- /garage key create --name garageadmin 2>&1 || true
     oc exec -n poc-garage "$garage_pod" -- /garage bucket allow --read --write velero --key garageadmin 2>&1 || true
     print_ok "버킷 'velero' 생성 및 접근 권한 부여됨"
 
