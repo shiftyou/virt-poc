@@ -334,6 +334,17 @@ if [ "$ARG1" = "status" ]; then
         echo -e "$result"
     }
 
+    pad_right() {
+        local str="$1" target="$2"
+        local len=${#str}
+        local byte_len
+        byte_len=$(printf '%s' "$str" | LC_ALL=C wc -c | tr -d ' ')
+        local dw=$(( (len + byte_len) / 2 ))
+        local pad=$(( target - dw ))
+        [ $pad -lt 0 ] && pad=0
+        printf '%s%*s' "$str" "$pad" ""
+    }
+
     step_desc() {
         case "$1" in
             01) echo "Template 등록" ;;
@@ -366,7 +377,7 @@ if [ "$ARG1" = "status" ]; then
     echo -e "${CYAN}  virt-poc Lab 상태${NC}   $(oc whoami) @ $(oc whoami --show-server)"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    printf "  ${CYAN}%-4s %-24s %-20s %s${NC}\n" "Lab" "설명" "상태" "Operator"
+    printf "  ${CYAN}%-4s %s %-20s %s${NC}\n" "Lab" "$(pad_right "설명" 24)" "상태" "Operator"
     echo "  ──────────────────────────────────────────────────────────────────────"
 
     DONE=0 NOT_DONE=0 SKIP=0 NA=0
@@ -380,17 +391,20 @@ if [ "$ARG1" = "status" ]; then
 
         lab_status "$num" && rc=0 || rc=$?
 
+        local padded
+        padded=$(pad_right "$desc" 24)
+
         if [ $rc -eq 2 ]; then
-            printf "  %-4s %-24s ${DIM}%-20s${NC} %b\n" "$num" "$desc" "—  N/A" "$ops_fmt"
+            printf "  %-4s %s ${DIM}%-20s${NC} %b\n" "$num" "$padded" "—  N/A" "$ops_fmt"
             NA=$((NA+1))
         elif ! operators_ok "$ops"; then
-            printf "  %-4s %-24s ${YELLOW}%-20s${NC} %b\n" "$num" "$desc" "⚠  Operator 미설치" "$ops_fmt"
+            printf "  %-4s %s ${YELLOW}%-20s${NC} %b\n" "$num" "$padded" "⚠  Operator 미설치" "$ops_fmt"
             SKIP=$((SKIP+1))
         elif [ $rc -eq 0 ]; then
-            printf "  %-4s %-24s ${GREEN}%-20s${NC} %b\n" "$num" "$desc" "✔  완료" "$ops_fmt"
+            printf "  %-4s %s ${GREEN}%-20s${NC} %b\n" "$num" "$padded" "✔  완료" "$ops_fmt"
             DONE=$((DONE+1))
         else
-            printf "  %-4s %-24s ${DIM}%-20s${NC} %b\n" "$num" "$desc" "·  미완료" "$ops_fmt"
+            printf "  %-4s %s ${DIM}%-20s${NC} %b\n" "$num" "$padded" "·  미완료" "$ops_fmt"
             NOT_DONE=$((NOT_DONE+1))
         fi
     done
