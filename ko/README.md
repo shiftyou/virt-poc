@@ -66,6 +66,4 @@ cd ko
 ## 참고 문서
 
 - [실행 순서](EXECUTION-ORDER.md)
-- [리소스 인벤토리](RESOURCE-INVENTORY.md) — 각 Lab이 생성하는 네임스페이스, VM, 리소스 목록
-- [reset vs cleanup 비교](RESET-vs-CLEANUP.md)
 - [환경 설정 예시](env.conf.example)

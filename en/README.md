@@ -66,6 +66,4 @@ cd en
 ## Reference
 
 - [Execution Order](EXECUTION-ORDER.md)
-- [Resource Inventory](RESOURCE-INVENTORY.md) — Namespaces, VMs, and resources created by each lab
-- [reset vs cleanup](RESET-vs-CLEANUP.md)
 - [Environment Config Example](env.conf.example)
