@@ -13,7 +13,7 @@
 #   ./make.sh start      Run all steps
 #   ./make.sh 7          Run only step 07
 #   ./make.sh from 7     Run from step 07 to the end
-#   ./make.sh clean      Delete all poc- namespaces
+#   ./make.sh reset      Delete all poc- namespaces
 # =============================================================================
 
 set -euo pipefail
@@ -50,16 +50,16 @@ if [ -z "$ARG1" ]; then
     echo -e "    ${CYAN}./make.sh start${NC}        Run all steps"
     echo -e "    ${CYAN}./make.sh 7${NC}            Run only step 07"
     echo -e "    ${CYAN}./make.sh from 7${NC}       Run from step 07 to the end"
-    echo -e "    ${CYAN}./make.sh clean${NC}        Delete poc- namespaces + generated files"
-    echo -e "    ${CYAN}./make.sh cleanup${NC}      Run --cleanup for all steps"
+    echo -e "    ${CYAN}./make.sh reset${NC}        Delete poc- namespaces + generated files"
+    echo -e "    ${CYAN}./make.sh cleanup${NC}      Run --cleanup for each step in reverse order"
     echo ""
     exit 0
 fi
 
 # =============================================================================
-# clean subcommand
+# reset subcommand
 # =============================================================================
-if [ "$ARG1" = "clean" ]; then
+if [ "$ARG1" = "reset" ]; then
     if ! oc whoami &>/dev/null; then
         print_error "Not logged into OpenShift."
         exit 1
@@ -75,7 +75,7 @@ if [ "$ARG1" = "clean" ]; then
 
     echo ""
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}  make.sh clean — Deleting the following namespaces${NC}"
+    echo -e "${YELLOW}  make.sh reset — Deleting the following namespaces${NC}"
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     echo "$NAMESPACES" | while read -r ns; do

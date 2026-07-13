@@ -1,4 +1,4 @@
-# make.sh clean vs cleanup 비교
+# make.sh reset vs cleanup 비교
 
 두 명령어의 차이점과 사용 시나리오를 설명합니다.
 
@@ -6,7 +6,7 @@
 
 ## 📋 요약 비교
 
-| 항목 | `make.sh clean` | `make.sh cleanup` |
+| 항목 | `make.sh reset` | `make.sh cleanup` |
 |------|----------------|-------------------|
 | **목적** | 전체 환경 초기화 | 각 Lab의 정리 스크립트 실행 |
 | **삭제 방법** | 네임스페이스 전체 삭제 | 각 Lab 스크립트의 --cleanup 옵션 |
@@ -17,14 +17,12 @@
 
 ---
 
-## `make.sh clean` - 전체 환경 초기화
+## `make.sh reset` - 전체 환경 초기화
 
 ### 동작 방식
 
 ```bash
-./make.sh clean
-# 또는
-./make.sh clean
+./make.sh reset
 ```
 
 1. **모든 poc-* 네임스페이스 삭제** (한 번에)
@@ -75,17 +73,17 @@ Kubernetes 리소스:
 
 ```bash
 # 시나리오 1: 처음부터 다시 시작
-./make.sh clean
+./make.sh reset
 ./setup.sh
 ./make.sh start
 
 # 시나리오 2: 다른 설정으로 재시작
-./make.sh clean
+./make.sh reset
 # env.conf 수정
 ./make.sh start
 
 # 시나리오 3: 데모 후 환경 정리
-./make.sh clean
+./make.sh reset
 # 깔끔한 상태로 복원
 ```
 
@@ -171,9 +169,9 @@ cd 14-oadp
 
 ### Scenario: OADP Lab 재실행
 
-**방법 1: clean 사용**
+**방법 1: reset 사용**
 ```bash
-./make.sh clean                    # 모든 POC 네임스페이스 삭제 (5초)
+./make.sh reset                    # 모든 POC 네임스페이스 삭제 (5초)
 ./setup.sh                    # 환경 재설정 필요
 cd 14-oadp && ./14-oadp.sh   # OADP만 재실행
 
@@ -204,16 +202,16 @@ cd 14-oadp && ./14-oadp.sh   # 재실행
 
 ## 언제 무엇을 사용할까?
 
-### `make.sh clean` 사용
+### `make.sh reset` 사용
 
 ✅ **완전히 처음부터 다시 시작**
 ```bash
-./make.sh clean && ./setup.sh && ./make.sh start
+./make.sh reset && ./setup.sh && ./make.sh start
 ```
 
 ✅ **다른 환경 설정 테스트**
 ```bash
-./make.sh clean
+./make.sh reset
 # env.conf 수정 또는 삭제
 ./setup.sh  # 새 설정으로
 ./make.sh start
@@ -221,13 +219,13 @@ cd 14-oadp && ./14-oadp.sh   # 재실행
 
 ✅ **데모 후 빠른 정리**
 ```bash
-./make.sh clean
+./make.sh reset
 # 1-2분 안에 모든 POC 리소스 제거
 ```
 
 ✅ **디스크 공간 확보**
 ```bash
-./make.sh clean
+./make.sh reset
 # 모든 생성된 파일 제거
 # downloads/ 및 tarball도 선택적 제거
 ```
@@ -274,7 +272,7 @@ done
 
 ```bash
 # 빠른 초기화가 필요하면
-./make.sh clean
+./make.sh reset
 
 # 안전한 제거가 필요하면
 ./make.sh cleanup
@@ -297,17 +295,17 @@ cd <lab-dir> && ./<lab>.sh
 
 ```bash
 # 빠른 정리가 필요
-./make.sh clean
+./make.sh reset
 
 # 리소스 누수 방지
-./make.sh clean || ./make.sh cleanup || true
+./make.sh reset || ./make.sh cleanup || true
 ```
 
 ---
 
 ## 주의사항
 
-### clean 사용 시
+### reset 사용 시
 
 ⚠️ **env.conf는 유지됨**
 - 재사용하려면 그대로 두기
@@ -315,7 +313,7 @@ cd <lab-dir> && ./<lab>.sh
 
 ⚠️ **클러스터 레벨 리소스**
 - NNCP, Template은 네임스페이스 밖에 있음
-- `clean`으로는 삭제 안 됨
+- `reset`으로는 삭제 안 됨
 - 필요시 수동 삭제:
   ```bash
   oc delete nncp --all
@@ -338,14 +336,14 @@ cd <lab-dir> && ./<lab>.sh
 
 | 상황 | 권장 명령어 | 이유 |
 |------|-----------|------|
-| 처음부터 다시 시작 | `./make.sh clean` | 빠르고 완전함 |
+| 처음부터 다시 시작 | `./make.sh reset` | 빠르고 완전함 |
 | 특정 Lab만 재실행 | `cd <lab> && ./<lab>.sh --cleanup` | 다른 Lab 유지 |
 | 안전한 전체 제거 | `./make.sh cleanup` | 의존성 고려 |
-| 데모 후 정리 | `./make.sh clean` | 가장 빠름 |
+| 데모 후 정리 | `./make.sh reset` | 가장 빠름 |
 | 프로덕션 환경 | `./make.sh cleanup` | 안전함 |
-| CI/CD | `./make.sh clean` | 속도 중요 |
+| CI/CD | `./make.sh reset` | 속도 중요 |
 
 **일반 원칙:**
-- 빠르게 = `./make.sh clean`
+- 빠르게 = `./make.sh reset`
 - 안전하게 = `./make.sh cleanup`
 - 부분적으로 = 직접 네임스페이스 삭제 또는 개별 Lab --cleanup

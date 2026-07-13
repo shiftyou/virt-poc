@@ -495,7 +495,7 @@ less operators/iscsi-storage.md
 
 ```bash
 # 모든 POC 리소스 삭제 및 파일 정리
-./make.sh clean
+./make.sh reset
 ```
 
 ### 삭제되는 항목
@@ -522,7 +522,7 @@ Clean 후 처음부터 다시 시작:
 
 ```bash
 # 1. Clean (이미 실행했다면 생략)
-./make.sh clean
+./make.sh reset
 
 # 2. 환경 재설정 (env.conf 재생성하려면)
 ./setup.sh

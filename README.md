@@ -267,7 +267,7 @@ cd 14-oadp
 
 ```bash
 # Option 1: Fast full cleanup (recommended)
-./make.sh clean
+./make.sh reset
 # - Deletes all poc-* namespaces at once (fast)
 # - Removes generated YAML and temp files
 # - Optionally removes downloads and tarballs
@@ -279,7 +279,7 @@ cd 14-oadp
 # - Slower but safer
 ```
 
-> 📘 **차이점 상세 가이드**: [CLEAN-vs-CLEANUP.md](CLEAN-vs-CLEANUP.md) 참조
+> 📘 **차이점 상세 가이드**: [RESET-vs-CLEANUP.md](RESET-vs-CLEANUP.md) 참조
 
 ---
 
