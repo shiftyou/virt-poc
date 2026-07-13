@@ -391,7 +391,6 @@ if [ "$ARG1" = "status" ]; then
 
         lab_status "$num" && rc=0 || rc=$?
 
-        local padded
         padded=$(pad_right "$desc" 24)
 
         if [ $rc -eq 2 ]; then
