@@ -45,6 +45,23 @@ preflight() {
         exit 1
     fi
     print_ok "${worker_count} worker nodes confirmed"
+}
+
+# =============================================================================
+step_identify() {
+    print_step "1/5  Node Status Check"
+
+    echo ""
+    oc get nodes -o wide
+    echo ""
+
+    print_warn "A worker node will be removed from the cluster and rejoined by restarting kubelet."
+    echo ""
+    read -r -p "  Do you want to continue? [y/N] " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        print_info "Cancelled."
+        exit 0
+    fi
 
     # Display worker node list and prompt for selection
     local workers
@@ -79,15 +96,6 @@ preflight() {
 
     TARGET_NODE="${workers[$((choice-1))]}"
     print_ok "Selected target node: ${TARGET_NODE}"
-}
-
-# =============================================================================
-step_identify() {
-    print_step "1/5  Node Status Check"
-
-    echo ""
-    oc get nodes -o wide
-    echo ""
 
     local node_ip
     node_ip=$(oc get node "$TARGET_NODE" \
@@ -96,14 +104,6 @@ step_identify() {
     print_info "Target node : ${TARGET_NODE}"
     print_info "Node IP     : ${node_ip}"
     print_info "SSH access  : ssh core@${node_ip}"
-    echo ""
-    print_warn "This node will be removed from the cluster and rejoined by restarting kubelet."
-    echo ""
-    read -r -p "  Do you want to continue? [y/N] " confirm
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-        print_info "Cancelled."
-        exit 0
-    fi
 }
 
 # =============================================================================

@@ -45,6 +45,23 @@ preflight() {
         exit 1
     fi
     print_ok "워커 노드 ${worker_count}개 확인됨"
+}
+
+# =============================================================================
+step_identify() {
+    print_step "1/5  노드 상태 확인"
+
+    echo ""
+    oc get nodes -o wide
+    echo ""
+
+    print_warn "워커 노드를 클러스터에서 제거한 후 kubelet 재시작으로 재합류시킵니다."
+    echo ""
+    read -r -p "  계속하시겠습니까? [y/N] " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        print_info "취소되었습니다."
+        exit 0
+    fi
 
     # 워커 노드 목록 표시 및 선택 프롬프트
     local workers
@@ -79,15 +96,6 @@ preflight() {
 
     TARGET_NODE="${workers[$((choice-1))]}"
     print_ok "선택된 대상 노드: ${TARGET_NODE}"
-}
-
-# =============================================================================
-step_identify() {
-    print_step "1/5  노드 상태 확인"
-
-    echo ""
-    oc get nodes -o wide
-    echo ""
 
     local node_ip
     node_ip=$(oc get node "$TARGET_NODE" \
@@ -96,14 +104,6 @@ step_identify() {
     print_info "대상 노드 : ${TARGET_NODE}"
     print_info "노드 IP   : ${node_ip}"
     print_info "SSH 접근  : ssh core@${node_ip}"
-    echo ""
-    print_warn "이 노드는 클러스터에서 제거된 후 kubelet 재시작으로 재합류됩니다."
-    echo ""
-    read -r -p "  계속하시겠습니까? [y/N] " confirm
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-        print_info "취소되었습니다."
-        exit 0
-    fi
 }
 
 # =============================================================================
