@@ -268,8 +268,6 @@ cd 14-oadp
 ```bash
 # Option 1: Fast full cleanup (recommended)
 ./make.sh clean
-# or
-make clean
 # - Deletes all poc-* namespaces at once (fast)
 # - Removes generated YAML and temp files
 # - Optionally removes downloads and tarballs

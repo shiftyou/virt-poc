@@ -39,7 +39,7 @@ Step 3: Recovery complete
 - Self Node Remediation Operator installed (`operators/snr-operator.md` for reference)
 - Node Health Check Operator installed (`operators/nhc-operator.md` for reference)
 - 2 or more worker nodes
-- `14-snr.sh` execution completed
+- `16-snr.sh` execution completed
 
 ---
 

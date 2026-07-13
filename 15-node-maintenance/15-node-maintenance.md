@@ -36,7 +36,7 @@ Step 3: Maintenance complete → NodeMaintenance deleted → uncordon
 - `01-template` completed — `poc` Template and DataSource registered
 - Node Maintenance Operator installed (`operators/node-maintenance-operator.md` for reference)
 - 2 or more worker nodes
-- `13-node-maintenance.sh` execution completed
+- `15-node-maintenance.sh` execution completed
 
 ---
 

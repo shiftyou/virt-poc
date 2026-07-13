@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# 06-descheduler.sh
+# 07-descheduler.sh
 #
 # Descheduler practice environment setup
 #   1. Create poc-descheduler namespace
@@ -11,7 +11,7 @@
 #   4. Analyze CPU/Memory status of TEST_NODE → calculate trigger VM resources
 #   5. Deploy trigger VM on TEST_NODE → exceed node threshold → trigger Descheduler
 #
-# Usage: ./06-descheduler.sh
+# Usage: ./07-descheduler.sh
 # =============================================================================
 
 set -euo pipefail
@@ -479,7 +479,7 @@ print_summary() {
     echo -e "    poc-descheduler-vm-fixed   → Stays on ${NODE1} (eviction excluded)"
     echo -e "    poc-descheduler-vm-trigger → Stays on ${NODE1} (most recently deployed)"
     echo ""
-    echo -e "  For details: refer to 06-descheduler.md"
+    echo -e "  For details: refer to 07-descheduler/07-descheduler.md"
     echo ""
 }
 

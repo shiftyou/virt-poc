@@ -6,8 +6,8 @@ automatic restart and traffic blocking based on HTTP server responses inside the
 ```
 VM (poc-liveness-vm)
   │
-  ├─ livenessProbe  — httpGet :1500  → automatically restart VM on failure
-  └─ readinessProbe — httpGet :1500  → block Service traffic on failure
+  ├─ livenessProbe  — httpGet :80  → automatically restart VM on failure
+  └─ readinessProbe — httpGet :80  → block Service traffic on failure
          │
          └─ virt-probe (KubeVirt internal agent)
               └─ direct HTTP request to VMI internal IP
@@ -28,16 +28,15 @@ to connect directly to the VMI (VirtualMachineInstance) internal IP.
 | On Liveness failure | container restart | VM restart (VirtualMachine CR) |
 | On Readiness failure | exclude from Service endpoints | exclude from Service endpoints |
 
-> **Why port 1500**
-> In pod network masquerade environments, direct access to port 80 by virt-probe may be restricted.
-> Run an HTTP server on port 1500 inside the VM to configure Probe.
+> **Note:** The poc golden image has httpd (port 80) pre-installed.
+> The Probe targets port 80 to check the httpd health status.
 
 ---
 
 ## Prerequisites
 
 - `01-template` complete — poc Template and DataSource registered
-- `07-liveness-probe.sh` execution complete
+- `08-liveness-probe.sh` execution complete
 
 ```bash
 oc get template poc -n openshift
@@ -54,7 +53,7 @@ spec:
     spec:
       readinessProbe:
         httpGet:
-          port: 1500
+          port: 80
         initialDelaySeconds: 120   # Wait for VM boot
         periodSeconds: 20
         timeoutSeconds: 10
@@ -62,7 +61,7 @@ spec:
         successThreshold: 3
       livenessProbe:
         httpGet:
-          port: 1500
+          port: 80
         initialDelaySeconds: 120
         periodSeconds: 20
         timeoutSeconds: 10
@@ -95,20 +94,20 @@ virtctl console poc-liveness-vm -n poc-liveness-probe
 
 ### 2. Run HTTP server inside the VM
 
-The poc golden image has **httpd (port 80)** installed.
-Additionally run a **port 1500 HTTP server** for Probe testing.
+The poc golden image has **httpd (port 80)** pre-installed.
+The Probe checks port 80, so httpd must be running.
 
 ```bash
-# Run inside the VM (after logging in as cloud-user)
-python3 -m http.server 1500 &
+# Verify httpd is running inside the VM (after logging in as cloud-user)
+systemctl status httpd
 
-# Or socket-based simple server (if python is not installed)
-while true; do echo -e "HTTP/1.1 200 OK\r\n\r\nOK" | nc -l -p 1500 -q 1; done &
+# Start httpd if not running
+sudo systemctl start httpd
 ```
 
 Verify server:
 ```bash
-curl http://localhost:1500
+curl http://localhost:80
 ```
 
 ### 3. Check Probe status
@@ -170,7 +169,7 @@ oc get vmi poc-liveness-vm -n poc-liveness-probe \
 
 # 3. Verify Ready recovery after restarting HTTP server
 # Inside VM:
-python3 -m http.server 1500 &
+sudo systemctl start httpd
 ```
 
 ---

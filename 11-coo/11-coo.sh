@@ -75,8 +75,7 @@ preflight() {
         print_error "Cluster Observability Operator is not installed."
         echo ""
         print_info "Install COO from OperatorHub or apply the manifest:"
-        echo -e "  ${CYAN}# Refer to: operators/coo-operator.md${NC}"
-        echo -e "  ${CYAN}# Or install from OperatorHub → 'Cluster Observability Operator'${NC}"
+        echo -e "  ${CYAN}# Install from OperatorHub → Red Hat operators → 'Cluster Observability Operator'${NC}"
         echo ""
         print_info "After installation, verify:"
         echo -e "  ${CYAN}oc get csv --all-namespaces | grep cluster-observability-operator${NC}"
@@ -244,7 +243,7 @@ EOF
     # Start VM
     virtctl start "$VM_NAME" -n "$NS" 2>/dev/null || true
     print_info "VM start requested — may take time to reach Running state."
-    print_warn "node_exporter installation inside VM is required (refer to 09-node-exporter/node-exporter-install.sh)"
+    print_warn "node_exporter installation inside VM is required (refer to 10-node-exporter/node-exporter-install.sh)"
     print_info "  oc get vmi $VM_NAME -n $NS"
 }
 
@@ -456,7 +455,7 @@ step_coo_dashboard() {
 
     if [ "${GRAFANA_INSTALLED:-false}" != "true" ]; then
         print_warn "Grafana Operator not installed — skipping dashboard deployment."
-        print_info "Run 11-grafana/11-grafana.sh after installing the Grafana Operator."
+        print_info "Run 12-grafana/12-grafana.sh after installing the Grafana Operator."
         return
     fi
 
@@ -982,7 +981,7 @@ step_datasource_for_grafana() {
 
     if [ "${GRAFANA_INSTALLED:-false}" != "true" ]; then
         print_warn "Grafana Operator not installed — skipping DataSource registration."
-        print_info "Run 11-grafana/11-grafana.sh after installing the Grafana Operator."
+        print_info "Run 12-grafana/12-grafana.sh after installing the Grafana Operator."
         return
     fi
 

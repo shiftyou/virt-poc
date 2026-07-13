@@ -184,7 +184,7 @@ virtctl vmexport download rhel9-poc-export \
 virtctl vmexport delete rhel9-poc-export -n poc-vm-build
 ```
 
-> **Detailed guide**: Refer to [pvc-to-qcow2.md](pvc-to-qcow2.md) Part 1
+> **Detailed guide**: Refer to OpenShift documentation for VM export workflow
 
 ---
 

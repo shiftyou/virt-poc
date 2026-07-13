@@ -1,13 +1,13 @@
 #!/bin/bash
 # =============================================================================
-# 07-liveness-probe.sh
+# 08-liveness-probe.sh
 #
 # VM Liveness Probe practice environment setup
 #   1. Create poc-liveness-probe namespace
 #   2. Create VM using poc template
 #   3. Configure HTTP Liveness Probe (port 80) on VM
 #
-# Usage: ./07-liveness-probe.sh
+# Usage: ./08-liveness-probe.sh
 # =============================================================================
 
 set -euo pipefail
@@ -257,7 +257,7 @@ print_summary() {
     echo -e "  VM console access:"
     echo -e "    ${CYAN}virtctl console $VM_NAME -n $NS${NC}"
     echo ""
-    echo -e "  For details: refer to ${CYAN}10-liveness-probe.md${NC}"
+    echo -e "  For details: refer to ${CYAN}08-liveness-probe/08-liveness-probe.md${NC}"
     echo ""
 }
 

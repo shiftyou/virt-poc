@@ -22,7 +22,7 @@ OpenShift Virtualization
 - MTV Operator installed (`operators/mtv-operator.md` for reference)
 - vSphere access information (vCenter URL, username/password)
 - VMware VDDK image (`VDDK_IMAGE` in `env.conf`)
-- `11-mtv.sh` execution completed
+- `13-mtv.sh` execution completed
 
 ---
 

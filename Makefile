@@ -122,18 +122,13 @@ if [ "$ARG1" = "clean" ]; then
     print_info "Cleaning up generated files..."
     echo ""
 
-    # Find and remove generated YAML files
-    YAML_FILES=$(find . -maxdepth 2 -type f \( \
+    # Find and remove generated YAML files (exclude git-tracked source files)
+    YAML_FILES=$(find . -maxdepth 2 -path './[0-9][0-9]-*' -type f \( \
         -name "*.yaml" -o \
-        -name "*.yml" -o \
-        -name "nmstate-cr.yaml" -o \
-        -name "nncp-*.yaml" -o \
-        -name "nad-*.yaml" -o \
-        -name "cloud-credentials-*.yaml" -o \
-        -name "volumesnapshotclass.yaml" -o \
-        -name "consoleyamlsample-*.yaml" -o \
-        -name "obc-*.yaml" \
-        \) 2>/dev/null || true)
+        -name "*.yml" \
+        \) 2>/dev/null | while read -r f; do
+        git ls-files --error-unmatch "$f" &>/dev/null || echo "$f"
+    done)
 
     if [ -n "$YAML_FILES" ]; then
         echo -e "${YELLOW}  Generated YAML files:${NC}"
@@ -216,7 +211,7 @@ if [ "$ARG1" = "cleanup" ]; then
     CLEANUP_STEPS=()
     while IFS= read -r dir; do
         CLEANUP_STEPS+=("$(basename "$dir")")
-    done < <(find "$SCRIPT_DIR" -maxdepth 1 -type d -name '[0-9][0-9]-*' | grep -v '/00-' | sort)
+    done < <(find "$SCRIPT_DIR" -maxdepth 1 -type d -name '[0-9][0-9]-*' | grep -v '/00-' | sort -r)
 
     for dir_name in "${CLEANUP_STEPS[@]}"; do
         script="${SCRIPT_DIR}/${dir_name}/${dir_name}.sh"
@@ -336,6 +331,8 @@ step_desc() {
         17-far)              echo "FAR — IPMI/BMC power restart recovery (Operator required)" ;;
         18-add-node)         echo "Worker node removal and rejoin" ;;
         19-hyperconverged)   echo "HyperConverged — CPU Overcommit configuration" ;;
+        20-logging)          echo "Audit Logging — LokiStack, ClusterLogForwarder" ;;
+        21-upgrade)          echo "Airgap Upgrade — oc-mirror, IDMS, OSUS" ;;
         *)                   echo "$1" ;;
     esac
 }
@@ -509,7 +506,7 @@ ns_desc() {
         poc-liveness-probe)       echo "08 Liveness Probe lab — HTTP, TCP, Exec Probe configuration and auto-restart" ;;
         poc-alert)                echo "09 VM Alert lab — PrometheusRule VM status notification" ;;
         poc-node-exporter)        echo "10 Node Exporter lab — Custom metric collection" ;;
-        poc-monitoring)           echo "11 Monitoring lab — Grafana, Dell, Hitachi storage" ;;
+        poc-monitoring)           echo "10-12 Monitoring lab — node-exporter, COO, Grafana" ;;
         poc-mtv)                  echo "13 MTV lab — VMware → OpenShift migration" ;;
         poc-oadp)                 echo "14 OADP lab — VM backup/restore" ;;
         poc-maintenance)          echo "15 Node Maintenance lab — VM Live Migration during node maintenance" ;;

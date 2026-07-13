@@ -647,7 +647,7 @@ print_summary() {
     echo -e "  Run restore (after backup completes):"
     echo -e "    ${CYAN}oc apply -f poc-oadp-restore.yaml${NC}"
     echo ""
-    echo -e "  For details: 13-oadp.md"
+    echo -e "  For details: 14-oadp/14-oadp.md"
     echo ""
 }
 
@@ -655,7 +655,7 @@ print_summary() {
 # Cleanup
 # =============================================================================
 cleanup() {
-    print_step "--cleanup: Delete 13-oadp resources"
+    print_step "--cleanup: Delete 14-oadp resources"
     local _oadp_ns="${OADP_NS:-openshift-adp}"
     oc delete project poc-oadp --ignore-not-found 2>/dev/null || true
     oc delete dataprotectionapplication poc-dpa -n "$_oadp_ns" --ignore-not-found 2>/dev/null || true
@@ -663,7 +663,7 @@ cleanup() {
     oc delete objectbucketclaim obc-backups -n "$_oadp_ns" --ignore-not-found 2>/dev/null || true
     oc delete volumesnapshotclass poc-volumesnapshotclass --ignore-not-found 2>/dev/null || true
     oc delete consoleyamlsample poc-dataprotectionapplication poc-backup poc-restore --ignore-not-found 2>/dev/null || true
-    print_ok "13-oadp resources deleted successfully"
+    print_ok "14-oadp resources deleted successfully"
 }
 
 main() {

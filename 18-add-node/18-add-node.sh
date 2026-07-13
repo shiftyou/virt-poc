@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# 17-add-node.sh
+# 18-add-node.sh
 #
 # Worker Node Removal and Rejoin Lab
 #   1. Identify target node (last worker node)
@@ -9,7 +9,7 @@
 #   4. Restart kubelet → Approve CSR → Verify node rejoin
 #   5. Uncordon + Final state verification
 #
-# Usage: ./17-add-node.sh
+# Usage: ./18-add-node.sh
 # =============================================================================
 
 set -euo pipefail
@@ -286,7 +286,7 @@ print_summary() {
     echo -e "  Check CSR status:"
     echo -e "    ${CYAN}oc get csr${NC}"
     echo ""
-    echo -e "  For more details, refer to: 16-add-node.md"
+    echo -e "  For more details, refer to: 18-add-node/18-add-node.md"
     echo ""
 }
 
@@ -294,7 +294,7 @@ print_summary() {
 main() {
     echo ""
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN}  16-add-node: Worker Node Removal and Rejoin Lab${NC}"
+    echo -e "${GREEN}  18-add-node: Worker Node Removal and Rejoin Lab${NC}"
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
     preflight

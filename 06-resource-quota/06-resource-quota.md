@@ -31,7 +31,7 @@ Initial state (within Quota)
 
 - cluster-admin or namespace admin permissions
 - `01-template` complete — poc Template registered
-- `05-resource-quota.sh` execution complete
+- `06-resource-quota.sh` execution complete
 
 ---
 

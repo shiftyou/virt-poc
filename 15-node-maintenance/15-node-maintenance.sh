@@ -1,13 +1,13 @@
 #!/bin/bash
 # =============================================================================
-# 14-node-maintenance.sh
+# 15-node-maintenance.sh
 #
 # Node Maintenance lab environment setup
 #   1. Create poc-maintenance namespace
 #   2. Deploy 2 VMs using poc template → consolidate on TEST_NODE via Live Migration
 #   3. Create NodeMaintenance → cordon + drain → verify VM auto-Migration
 #
-# Usage: ./14-node-maintenance.sh
+# Usage: ./15-node-maintenance.sh
 # =============================================================================
 
 set -euo pipefail
@@ -289,7 +289,7 @@ print_summary() {
     echo -e "  End maintenance (recover node):"
     echo -e "    ${CYAN}oc delete nodemaintenance maintenance-${NODE1}${NC}"
     echo ""
-    echo -e "  For details: 07-node-maintenance.md"
+    echo -e "  For details: 15-node-maintenance/15-node-maintenance.md"
     echo ""
 }
 
@@ -297,10 +297,10 @@ print_summary() {
 # Cleanup
 # =============================================================================
 cleanup() {
-    print_step "--cleanup: Delete 14-node-maintenance resources"
+    print_step "--cleanup: Delete 15-node-maintenance resources"
     oc delete project poc-maintenance --ignore-not-found 2>/dev/null || true
     oc delete consoleyamlsample poc-nodemaintenance --ignore-not-found 2>/dev/null || true
-    print_ok "14-node-maintenance resources deleted successfully"
+    print_ok "15-node-maintenance resources deleted successfully"
 }
 
 # =============================================================================

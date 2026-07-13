@@ -22,7 +22,7 @@ Vector Collector (DaemonSet)
 - (Optional) OpenShift Logging Operator installed — refer to `operators/`
 - (Optional) Loki Operator installed — refer to `operators/`
 - (Optional) Garage or ODF S3 backend — refer to Garage installation guide in `14-oadp.md`
-- `19-logging.sh` execution complete
+- `20-logging.sh` execution complete
 
 > Even without Logging Operator installed, **APIServer Audit Policy configuration** works standalone.
 
@@ -47,7 +47,7 @@ Vector Collector (DaemonSet)
 | ClusterLogging `instance` | `openshift-logging` | Vector Collector management |
 | LokiStack `logging-loki` | `openshift-logging` | Log storage (using S3) |
 | ClusterLogForwarder `instance` | `openshift-logging` | Collection/forwarding pipeline |
-| Secret `poc-far-credentials` | `openshift-logging` | Garage S3 credentials |
+| Secret `logging-loki-s3` | `openshift-logging` | Garage S3 credentials |
 
 ---
 

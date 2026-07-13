@@ -1,12 +1,12 @@
 #!/bin/bash
 # =============================================================================
-# 18-hyperconverged.sh
+# 19-hyperconverged.sh
 #
 # HyperConverged Configuration Lab
 #   1. Display current HyperConverged configuration
 #   2. Check CPU Overcommit ratio and provide guidance
 #
-# Usage: ./18-hyperconverged.sh
+# Usage: ./19-hyperconverged.sh
 # =============================================================================
 
 set -euo pipefail
@@ -94,7 +94,7 @@ step_guide() {
     echo -e "    ${YELLOW}  --type=merge \\${NC}"
     echo -e "    ${YELLOW}  -p '{\"spec\":{\"liveMigrationConfig\":{\"parallelMigrationsPerCluster\":5}}}'${NC}"
     echo ""
-    echo -e "  For more details, refer to: ${CYAN}15-hyperconverged.md${NC}"
+    echo -e "  For more details, refer to: ${CYAN}19-hyperconverged/19-hyperconverged.md${NC}"
     echo ""
 }
 

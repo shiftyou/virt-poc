@@ -11,6 +11,12 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="${SCRIPT_DIR}/env.conf"
+if [ -f "$ENV_FILE" ]; then
+    set -a; source "$ENV_FILE"; set +a
+fi
+
 VERBOSE="${1:-}"
 
 GREEN='\033[0;32m'
@@ -353,14 +359,14 @@ check_oadp() {
     fi
 
     test_start "DataProtectionApplication"
-    if oc get dpa -n openshift-adp &>/dev/null; then
+    if oc get dpa -n ${OADP_NS:-openshift-adp} &>/dev/null; then
         test_pass "DPA configured"
     else
         test_warn "DPA not configured"
     fi
 
     test_start "Garage S3 storage"
-    if oc get pods -n garage 2>/dev/null | grep -q garage; then
+    if oc get pods -n ${GARAGE_NS:-garage} 2>/dev/null | grep -q garage; then
         test_pass "Garage S3 storage running"
     else
         test_warn "Garage not deployed (see 14-oadp/14-oadp.md)"
@@ -368,7 +374,7 @@ check_oadp() {
 
     test_start "Backup/Restore CRs"
     local backup_count
-    backup_count=$(oc get backup -n openshift-adp 2>/dev/null | grep -v NAME | wc -l)
+    backup_count=$(oc get backup -n ${OADP_NS:-openshift-adp} 2>/dev/null | grep -v NAME | wc -l)
     if [ "$backup_count" -gt 0 ]; then
         test_pass "Backups created: $backup_count"
     else

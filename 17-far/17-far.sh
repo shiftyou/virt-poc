@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# 16-far.sh
+# 17-far.sh
 #
 # Fence Agents Remediation (FAR) lab environment setup
 #   1. Create poc-far namespace
@@ -8,7 +8,7 @@
 #   3. Create FenceAgentsRemediationTemplate (IPMI settings)
 #   4. Create NodeHealthCheck CR (FAR integration)
 #
-# Usage: ./16-far.sh
+# Usage: ./17-far.sh
 # =============================================================================
 
 set -euo pipefail
@@ -23,6 +23,7 @@ fi
 NS="poc-far"
 REMEDIATION_NS="openshift-workload-availability"
 NODE1="${TEST_NODE}"
+FENCE_AGENT_IP="${FENCE_AGENT_IPS%% *}"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -329,7 +330,7 @@ print_summary() {
     echo -e "    ${CYAN}oc get fenceagentsremediation -A${NC}"
     echo -e "    ${CYAN}oc get nodes -w${NC}"
     echo ""
-    echo -e "  For details: 16-far.md"
+    echo -e "  For details: 17-far/17-far.md"
     echo ""
 }
 
@@ -337,14 +338,14 @@ print_summary() {
 # Cleanup
 # =============================================================================
 cleanup() {
-    print_step "--cleanup: Delete 16-far resources"
+    print_step "--cleanup: Delete 17-far resources"
     local _rem_ns="openshift-workload-availability"
     oc delete project poc-far --ignore-not-found 2>/dev/null || true
     oc delete nodehealthcheck poc-far-nhc --ignore-not-found 2>/dev/null || true
     oc delete fenceagentsremediationtemplate poc-far-template -n "$_rem_ns" --ignore-not-found 2>/dev/null || true
     oc delete secret poc-far-credentials -n "$_rem_ns" --ignore-not-found 2>/dev/null || true
     oc delete consoleyamlsample poc-nodehealthcheck-far poc-fenceagentsremediationtemplate --ignore-not-found 2>/dev/null || true
-    print_ok "16-far resources deleted successfully"
+    print_ok "17-far resources deleted successfully"
 }
 
 # =============================================================================

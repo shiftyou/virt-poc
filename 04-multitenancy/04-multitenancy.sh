@@ -299,8 +299,8 @@ cleanup() {
     print_step "Cleanup"
 
     print_info "Deleting VMs..."
-    oc delete vm vm-poc-mt1 -n "$NS1" --ignore-not-found
-    oc delete vm vm-poc-mt2 -n "$NS2" --ignore-not-found
+    oc delete vm poc-mt-vm-1 -n "$NS1" --ignore-not-found
+    oc delete vm poc-mt-vm-2 -n "$NS2" --ignore-not-found
 
     print_info "Deleting namespaces (including RoleBindings)..."
     oc delete namespace "$NS1" --ignore-not-found

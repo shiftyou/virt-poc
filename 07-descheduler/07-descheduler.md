@@ -51,7 +51,7 @@ Step 4: Descheduler triggers (within 60 seconds)
 - `01-template` complete — poc Template and DataSource registered
 - Kube Descheduler Operator installed (see `operators/descheduler-operator.md`)
 - 2 or more worker nodes (destination nodes needed for VM relocation)
-- `06-descheduler.sh` execution complete
+- `07-descheduler.sh` execution complete
 
 ---
 
@@ -107,7 +107,7 @@ descheduler.alpha.kubernetes.io/evict: "false"
 Adding the above annotation to the VM's Pod template excludes that Pod from Descheduler eviction targets.
 
 ```bash
-# Patch applied in 06-descheduler.sh
+# Patch applied in 07-descheduler.sh
 oc patch vm poc-descheduler-vm-fixed -n poc-descheduler --type=merge -p '{
   "spec": {
     "template": {

@@ -40,7 +40,7 @@ Step 3: Recovery complete
 - Node Health Check Operator installed (`operators/nhc-operator.md` for reference)
 - IPMI/BMC accessible on worker nodes
 - `FENCE_AGENT_IP`, `FENCE_AGENT_USER`, `FENCE_AGENT_PASS` configured in `env.conf`
-- `16-far.sh` execution completed
+- `17-far.sh` execution completed
 
 ---
 

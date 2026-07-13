@@ -142,13 +142,13 @@ metadata:
   name: node-exporter-monitor
   namespace: ${NS}
   labels:
-    servicetype: metrics
+    monitor: metrics
 spec:
   selector:
     matchLabels:
-      servicetype: metrics
+      monitor: metrics
   endpoints:
-    - port: metric
+    - port: metrics
       interval: 30s
       path: /metrics
       relabelings:
@@ -257,7 +257,7 @@ print_summary() {
     echo -e "  Install node_exporter on VM:"
     echo -e "    ${CYAN}bash node-exporter-install.sh${NC}"
     echo ""
-    echo -e "  For details: refer to 12-node-exporter.md"
+    echo -e "  For details: refer to 10-node-exporter/10-node-exporter.md"
     echo ""
 }
 

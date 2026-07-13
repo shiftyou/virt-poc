@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# 19-logging.sh
+# 20-logging.sh
 #
 # OpenShift Audit Logging Configuration
 # APIServer Audit Policy setup + collection/forwarding through OpenShift Logging Operator
@@ -12,7 +12,7 @@
 #   5. Configure ClusterLogForwarder (including Audit logs)
 #   6. Status check
 #
-# Usage: ./19-logging.sh
+# Usage: ./20-logging.sh
 # =============================================================================
 
 set -euo pipefail
@@ -699,14 +699,14 @@ step_verify() {
 # Cleanup
 # =============================================================================
 cleanup() {
-    print_step "--cleanup: Delete 19-logging resources"
+    print_step "--cleanup: Delete 20-logging resources"
     local _logging_ns="openshift-logging"
     oc delete clusterlogforwarder --all -n "$_logging_ns" --ignore-not-found 2>/dev/null || true
     oc delete clusterlogging instance -n "$_logging_ns" --ignore-not-found 2>/dev/null || true
     oc delete lokistack logging-loki -n "$_logging_ns" --ignore-not-found 2>/dev/null || true
     oc delete secret logging-loki-s3 -n "$_logging_ns" --ignore-not-found 2>/dev/null || true
     oc delete obc obc-loki -n "$_logging_ns" --ignore-not-found 2>/dev/null || true
-    print_ok "19-logging resources deleted successfully"
+    print_ok "20-logging resources deleted successfully"
     print_info "  Namespace ${_logging_ns} is managed by Logging Operator and will not be deleted."
 }
 

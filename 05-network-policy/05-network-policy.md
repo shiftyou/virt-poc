@@ -1,7 +1,7 @@
 # NetworkPolicy / MultiNetworkPolicy Practice
 
 Deploy VMs in two namespaces and control traffic with network policies.
-When running `04-network-policy.sh`, select one of two methods.
+When running `05-network-policy.sh`, select one of two methods.
 
 ---
 
@@ -170,7 +170,7 @@ oc get multinetworkpolicy -n poc-multi-network-policy-2
 
 ## VM IP Assignment (cloud-init networkData)
 
-`04-network-policy.sh` automatically configures a static IP on eth1 via cloud-init during VM creation.
+`05-network-policy.sh` automatically configures a static IP on eth1 via cloud-init during VM creation.
 
 | VM | Namespace | eth1 IP |
 |----|-----------|---------|

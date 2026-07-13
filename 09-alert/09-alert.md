@@ -15,13 +15,13 @@ Prometheus (OpenShift Monitoring)
 
 - OpenShift Monitoring enabled (included by default)
 - User-defined project monitoring enabled (when using alerts in user namespaces)
-- `08-alert.sh` execution complete
+- `09-alert.sh` execution complete
 
 ---
 
 ## VM Creation (for Alert testing)
 
-When `08-alert.sh` is executed, `poc-alert-vm` is automatically created from the poc template.
+When `09-alert.sh` is executed, `poc-alert-vm` is automatically created from the poc template.
 Use the created VM to directly trigger each alert condition and verify the behavior.
 
 ```bash
@@ -438,7 +438,7 @@ oc exec -n openshift-user-workload-monitoring \
 oc get prometheusrule -n poc-alert
 ```
 
-If absent, re-run `08-alert.sh` or apply manually.
+If absent, re-run `09-alert.sh` or apply manually.
 
 ---
 

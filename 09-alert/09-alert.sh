@@ -1,13 +1,13 @@
 #!/bin/bash
 # =============================================================================
-# 08-alert.sh
+# 09-alert.sh
 #
 # VM Alert practice environment setup
 #   1. Create poc-alert namespace
 #   2. Enable user-defined project monitoring
 #   3. Deploy PrometheusRule (VM alert rules)
 #
-# Usage: ./08-alert.sh
+# Usage: ./09-alert.sh
 # =============================================================================
 
 set -euo pipefail

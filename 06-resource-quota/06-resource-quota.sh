@@ -302,7 +302,7 @@ print_summary() {
     echo -e "    poc-quota-vm-2  → Running  (cpu request: ${VM_CPU_REQUEST})"
     echo -e "    poc-quota-vm-3  → Pending  (virt-launcher Pod rejected due to Quota exceeded)"
     echo ""
-    echo -e "  For details: refer to 05-resource-quota.md"
+    echo -e "  For details: refer to 06-resource-quota/06-resource-quota.md"
     echo ""
 }
 

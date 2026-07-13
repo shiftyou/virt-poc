@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# 15-snr.sh
+# 16-snr.sh
 #
 # Self Node Remediation (SNR) lab environment setup
 #   1. Create poc-snr namespace
@@ -8,7 +8,7 @@
 #   3. Create NodeHealthCheck CR (SNR integration)
 #   4. Deploy 2 VMs using poc template → place on TEST_NODE
 #
-# Usage: ./15-snr.sh
+# Usage: ./16-snr.sh
 # =============================================================================
 
 set -euo pipefail
@@ -269,7 +269,7 @@ print_summary() {
     echo -e "    ${CYAN}oc get selfnoderemediation -A${NC}"
     echo -e "    ${CYAN}oc get nodes -w${NC}"
     echo ""
-    echo -e "  For details: 15-snr.md"
+    echo -e "  For details: 16-snr/16-snr.md"
     echo ""
 }
 
@@ -277,13 +277,13 @@ print_summary() {
 # Cleanup
 # =============================================================================
 cleanup() {
-    print_step "--cleanup: Delete 15-snr resources"
+    print_step "--cleanup: Delete 16-snr resources"
     local _rem_ns="openshift-workload-availability"
     oc delete project poc-snr --ignore-not-found 2>/dev/null || true
     oc delete nodehealthcheck poc-snr-nhc --ignore-not-found 2>/dev/null || true
     oc delete selfnoderemediationtemplate poc-snr-template -n "$_rem_ns" --ignore-not-found 2>/dev/null || true
     oc delete consoleyamlsample poc-nodehealthcheck-snr --ignore-not-found 2>/dev/null || true
-    print_ok "15-snr resources deleted successfully"
+    print_ok "16-snr resources deleted successfully"
 }
 
 # =============================================================================

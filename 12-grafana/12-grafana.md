@@ -59,7 +59,7 @@ oc get csv -n poc-monitoring | grep grafana
 # grafana-operator.v5.x.x   Grafana Operator   5.x.x   Succeeded
 
 # Re-run setup script to update GRAFANA_INSTALLED=true
-./11-grafana.sh
+./12-grafana.sh
 ```
 
 ---
@@ -353,7 +353,7 @@ oc get grafanadashboard -n poc-monitoring
 ## Rollback
 
 ```bash
-./11-grafana.sh --cleanup
+./12-grafana.sh --cleanup
 # or manually:
 oc delete namespace poc-monitoring
 oc delete clusterrolebinding grafana-cluster-monitoring-view

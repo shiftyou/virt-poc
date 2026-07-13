@@ -56,7 +56,7 @@ OpenShift has two independent Prometheus-based monitoring stacks.
 
 ### Install Cluster Observability Operator
 
-Install COO from OperatorHub (Red Hat operators) or refer to `operators/coo-operator.md`.
+Install COO from OperatorHub (Red Hat operators).
 
 ```bash
 # Verify installation
@@ -102,7 +102,7 @@ When the VM is in Running state, install node_exporter inside the VM.
 # Access VM console
 virtctl console "$VM_NAME" -n "$NS"
 
-# Install node_exporter inside VM (refer to 09-node-exporter/node-exporter-install.sh)
+# Install node_exporter inside VM (refer to 10-node-exporter/node-exporter-install.sh)
 ```
 
 ---
@@ -364,7 +364,7 @@ oc get endpoints poc-monitoring-node-exporter -n poc-monitoring
 ```
 
 > **When metrics are not visible**
-> - If Endpoints are empty, node_exporter is not running in the VM → run `09-node-exporter/node-exporter-install.sh`
+> - If Endpoints are empty, node_exporter is not running in the VM → run `10-node-exporter/node-exporter-install.sh`
 > - If user-workload-monitoring is disabled:
 >   ```bash
 >   oc get configmap cluster-monitoring-config -n openshift-monitoring -o yaml | grep enableUserWorkload

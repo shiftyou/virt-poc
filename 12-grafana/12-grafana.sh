@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# 11-grafana.sh
+# 12-grafana.sh
 #
 # Grafana Operator + OpenShift built-in Prometheus datasource + dashboards
 #   1/5  Create poc-monitoring namespace
@@ -9,7 +9,7 @@
 #   4/5  Deploy poc-vm-overview dashboard (KubeVirt VM Overall Status)
 #   5/5  Deploy grafana-dashboard-ocp-v (OpenShift Virtualization dashboard from URL)
 #
-# Usage: ./11-grafana.sh
+# Usage: ./12-grafana.sh
 # =============================================================================
 
 set -euo pipefail
@@ -1024,7 +1024,7 @@ print_summary() {
     echo -e "  Check Pod status:"
     echo -e "    ${CYAN}oc get pods -n ${NS}${NC}"
     echo ""
-    echo -e "  For details: refer to 11-grafana/11-grafana.md"
+    echo -e "  For details: refer to 12-grafana/12-grafana.md"
     echo ""
 }
 
@@ -1032,10 +1032,10 @@ print_summary() {
 # Cleanup
 # =============================================================================
 cleanup() {
-    print_step "--cleanup: Delete 11-grafana resources"
+    print_step "--cleanup: Delete 12-grafana resources"
     oc delete project poc-monitoring --ignore-not-found 2>/dev/null || true
     oc delete clusterrolebinding grafana-cluster-monitoring-view --ignore-not-found 2>/dev/null || true
-    print_ok "11-grafana resources deleted"
+    print_ok "12-grafana resources deleted"
 }
 
 main() {

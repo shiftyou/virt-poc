@@ -1,12 +1,12 @@
 #!/bin/bash
 # =============================================================================
-# 12-mtv.sh
+# 13-mtv.sh
 #
 # Migration Toolkit for Virtualization (MTV) lab environment setup
 #   1. Create poc-mtv namespace
 #   2. Display MTV pre-migration checklist
 #
-# Usage: ./12-mtv.sh
+# Usage: ./13-mtv.sh
 # =============================================================================
 
 set -euo pipefail
@@ -84,7 +84,7 @@ step_checklist() {
     echo -e "      .vmx: ctkEnabled = TRUE / scsiN:M.ctkEnabled = TRUE"
     echo -e "      Must create/delete snapshot once after enabling"
     echo ""
-    echo -e "  For details: ${CYAN}16-mtv.md${NC}"
+    echo -e "  For details: ${CYAN}13-mtv/13-mtv.md${NC}"
     echo ""
 }
 
@@ -109,9 +109,9 @@ print_summary() {
 # Cleanup
 # =============================================================================
 cleanup() {
-    print_step "--cleanup: Delete 12-mtv resources"
+    print_step "--cleanup: Delete 13-mtv resources"
     oc delete project poc-mtv --ignore-not-found 2>/dev/null || true
-    print_ok "12-mtv resources deleted successfully"
+    print_ok "13-mtv resources deleted successfully"
 }
 
 main() {
