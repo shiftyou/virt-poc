@@ -496,9 +496,6 @@ less operators/iscsi-storage.md
 ```bash
 # 모든 POC 리소스 삭제 및 파일 정리
 ./make.sh clean
-
-# 또는
-make clean
 ```
 
 ### 삭제되는 항목
