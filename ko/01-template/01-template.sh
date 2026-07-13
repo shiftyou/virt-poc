@@ -200,7 +200,7 @@ EOF
     print_ok "DataSource $DS_NAME 생성됨"
 
     # DataSource 존재 확인 후 PVC Bound 대기
-    print_info "PVC $DV_NAME이 Bound 상태가 되기를 대기 중..."
+    print_info "PVC ${DV_NAME}이 Bound 상태가 되기를 대기 중..."
     local pvc_phase dv_phase progress
     while true; do
         pvc_phase=$(oc get pvc "$DV_NAME" -n "$TARGET_NS" \

@@ -98,7 +98,7 @@ step_namespace() {
     print_step "1/3  namespace 생성 (${NS})"
 
     if oc get namespace "$NS" &>/dev/null; then
-        print_ok "Namespace $NS이(가) 이미 존재합니다 — 건너뜀"
+        print_ok "Namespace ${NS}이(가) 이미 존재합니다 — 건너뜀"
     else
         oc new-project "$NS" > /dev/null
         print_ok "Namespace $NS 생성 완료"

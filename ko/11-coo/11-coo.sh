@@ -96,7 +96,7 @@ step_namespace() {
         ns_phase=$(oc get namespace "$NS" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
 
         if [ "$ns_phase" = "Terminating" ]; then
-            print_warn "Namespace $NS가 Terminating 상태입니다 — 삭제 완료 대기 중..."
+            print_warn "Namespace ${NS}가 Terminating 상태입니다 — 삭제 완료 대기 중..."
             local retries=36
             local i=0
             while [ "$i" -lt "$retries" ]; do
@@ -111,7 +111,7 @@ step_namespace() {
             echo ""
 
             if oc get namespace "$NS" &>/dev/null; then
-                print_error "Namespace $NS가 여전히 Terminating 상태입니다."
+                print_error "Namespace ${NS}가 여전히 Terminating 상태입니다."
                 print_info "수동 확인: oc get namespace $NS -o yaml"
                 print_info "finalizer 강제 제거: oc patch namespace $NS -p '{\"metadata\":{\"finalizers\":[]}}' --type=merge"
                 exit 1
