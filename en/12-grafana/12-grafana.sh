@@ -25,8 +25,6 @@ source "${SCRIPT_DIR}/../utils/common.sh"
 
 NS="poc-monitoring"
 
-load_or_ask GRAFANA_ADMIN_PASS "Grafana admin password" "grafana123" "true"
-
 step_install_grafana_guide() {
     echo ""
     print_warn "Grafana Community Operator not installed — install using the procedure below then re-run setup.sh."
@@ -1036,6 +1034,7 @@ main() {
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
     preflight
+    load_or_ask GRAFANA_ADMIN_PASS "Grafana admin password" "grafana123"
     step_namespace
     step_grafana
     step_datasource
