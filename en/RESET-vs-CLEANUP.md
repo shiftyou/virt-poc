@@ -1,4 +1,4 @@
-# make.sh reset vs cleanup 비교
+# run.sh reset vs cleanup 비교
 
 두 명령어의 차이점과 사용 시나리오를 설명합니다.
 
@@ -6,7 +6,7 @@
 
 ## 📋 요약 비교
 
-| 항목 | `make.sh reset` | `make.sh cleanup` |
+| 항목 | `run.sh reset` | `run.sh cleanup` |
 |------|----------------|-------------------|
 | **목적** | 전체 환경 초기화 | 각 Lab의 정리 스크립트 실행 |
 | **삭제 방법** | 네임스페이스 전체 삭제 | 각 Lab 스크립트의 --cleanup 옵션 |
@@ -17,12 +17,12 @@
 
 ---
 
-## `make.sh reset` - 전체 환경 초기화
+## `run.sh reset` - 전체 환경 초기화
 
 ### 동작 방식
 
 ```bash
-./make.sh reset
+./run.sh reset
 ```
 
 1. **모든 poc-* 네임스페이스 삭제** (한 번에)
@@ -73,28 +73,28 @@ Kubernetes 리소스:
 
 ```bash
 # 시나리오 1: 처음부터 다시 시작
-./make.sh reset
+./run.sh reset
 ./setup.sh
-./make.sh start
+./run.sh start
 
 # 시나리오 2: 다른 설정으로 재시작
-./make.sh reset
+./run.sh reset
 # env.conf 수정
-./make.sh start
+./run.sh start
 
 # 시나리오 3: 데모 후 환경 정리
-./make.sh reset
+./run.sh reset
 # 깔끔한 상태로 복원
 ```
 
 ---
 
-## `make.sh cleanup` - 점진적 정리
+## `run.sh cleanup` - 점진적 정리
 
 ### 동작 방식
 
 ```bash
-./make.sh cleanup
+./run.sh cleanup
 ```
 
 1. **각 Lab 디렉토리를 역순으로 순회** (21 → 01)
@@ -149,7 +149,7 @@ Kubernetes 리소스:
 
 ```bash
 # 시나리오 1: 안전한 제거 (의존성 고려)
-./make.sh cleanup
+./run.sh cleanup
 # 역순으로 하나씩 정리
 
 # 시나리오 2: 특정 Lab만 재실행
@@ -159,7 +159,7 @@ cd 14-oadp
 
 # 시나리오 3: 디버깅
 # cleanup이 어디서 실패하는지 확인
-./make.sh cleanup
+./run.sh cleanup
 # 각 Lab의 cleanup 과정 확인 가능
 ```
 
@@ -171,7 +171,7 @@ cd 14-oadp
 
 **방법 1: reset 사용**
 ```bash
-./make.sh reset                    # 모든 POC 네임스페이스 삭제 (5초)
+./run.sh reset                    # 모든 POC 네임스페이스 삭제 (5초)
 ./setup.sh                    # 환경 재설정 필요
 cd 14-oadp && ./14-oadp.sh   # OADP만 재실행
 
@@ -202,41 +202,41 @@ cd 14-oadp && ./14-oadp.sh   # 재실행
 
 ## 언제 무엇을 사용할까?
 
-### `make.sh reset` 사용
+### `run.sh reset` 사용
 
 ✅ **완전히 처음부터 다시 시작**
 ```bash
-./make.sh reset && ./setup.sh && ./make.sh start
+./run.sh reset && ./setup.sh && ./run.sh start
 ```
 
 ✅ **다른 환경 설정 테스트**
 ```bash
-./make.sh reset
+./run.sh reset
 # env.conf 수정 또는 삭제
 ./setup.sh  # 새 설정으로
-./make.sh start
+./run.sh start
 ```
 
 ✅ **데모 후 빠른 정리**
 ```bash
-./make.sh reset
+./run.sh reset
 # 1-2분 안에 모든 POC 리소스 제거
 ```
 
 ✅ **디스크 공간 확보**
 ```bash
-./make.sh reset
+./run.sh reset
 # 모든 생성된 파일 제거
 # downloads/ 및 tarball도 선택적 제거
 ```
 
 ---
 
-### `make.sh cleanup` 사용
+### `run.sh cleanup` 사용
 
 ✅ **프로덕션 환경 제거 (안전)**
 ```bash
-./make.sh cleanup
+./run.sh cleanup
 # 의존성 순서대로 안전하게 제거
 ```
 
@@ -249,7 +249,7 @@ cd 14-oadp
 
 ✅ **문제 디버깅**
 ```bash
-./make.sh cleanup
+./run.sh cleanup
 # 각 Lab의 정리 과정 확인
 # 어디서 실패하는지 파악
 ```
@@ -272,10 +272,10 @@ done
 
 ```bash
 # 빠른 초기화가 필요하면
-./make.sh reset
+./run.sh reset
 
 # 안전한 제거가 필요하면
-./make.sh cleanup
+./run.sh cleanup
 ```
 
 ### 개발/테스트 중
@@ -295,10 +295,10 @@ cd <lab-dir> && ./<lab>.sh
 
 ```bash
 # 빠른 정리가 필요
-./make.sh reset
+./run.sh reset
 
 # 리소스 누수 방지
-./make.sh reset || ./make.sh cleanup || true
+./run.sh reset || ./run.sh cleanup || true
 ```
 
 ---
@@ -336,14 +336,14 @@ cd <lab-dir> && ./<lab>.sh
 
 | 상황 | 권장 명령어 | 이유 |
 |------|-----------|------|
-| 처음부터 다시 시작 | `./make.sh reset` | 빠르고 완전함 |
+| 처음부터 다시 시작 | `./run.sh reset` | 빠르고 완전함 |
 | 특정 Lab만 재실행 | `cd <lab> && ./<lab>.sh --cleanup` | 다른 Lab 유지 |
-| 안전한 전체 제거 | `./make.sh cleanup` | 의존성 고려 |
-| 데모 후 정리 | `./make.sh reset` | 가장 빠름 |
-| 프로덕션 환경 | `./make.sh cleanup` | 안전함 |
-| CI/CD | `./make.sh reset` | 속도 중요 |
+| 안전한 전체 제거 | `./run.sh cleanup` | 의존성 고려 |
+| 데모 후 정리 | `./run.sh reset` | 가장 빠름 |
+| 프로덕션 환경 | `./run.sh cleanup` | 안전함 |
+| CI/CD | `./run.sh reset` | 속도 중요 |
 
 **일반 원칙:**
-- 빠르게 = `./make.sh reset`
-- 안전하게 = `./make.sh cleanup`
+- 빠르게 = `./run.sh reset`
+- 안전하게 = `./run.sh cleanup`
 - 부분적으로 = 직접 네임스페이스 삭제 또는 개별 Lab --cleanup

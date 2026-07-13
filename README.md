@@ -12,8 +12,8 @@ This project is available in two languages. Each directory is fully self-contain
 
 | Language | Directory | Quick Start |
 |----------|-----------|-------------|
-| **English** | [`en/`](en/) | `cd en && ./setup.sh && ./make.sh start` |
-| **Korean (한국어)** | [`ko/`](ko/) | `cd ko && ./setup.sh && ./make.sh start` |
+| **English** | [`en/`](en/) | `cd en && ./setup.sh && ./run.sh start` |
+| **Korean (한국어)** | [`ko/`](ko/) | `cd ko && ./setup.sh && ./run.sh start` |
 
 ---
 
@@ -32,7 +32,7 @@ cd en    # English
 ./setup.sh
 
 # 4. Run all steps in order
-./make.sh start
+./run.sh start
 
 # 5. Verify all features
 ./check-features.sh
@@ -46,7 +46,7 @@ cd en    # English
 virt-poc/
 ├── en/                       # English version (fully self-contained)
 │   ├── setup.sh              # Environment configuration
-│   ├── make.sh               # Run all labs in order
+│   ├── run.sh               # Run all labs in order
 │   ├── check-features.sh     # Verify all features
 │   ├── env.conf.example      # Environment config template
 │   ├── utils/                # Shared utilities
@@ -60,7 +60,7 @@ virt-poc/
 │
 ├── ko/                       # Korean version (fully self-contained)
 │   ├── setup.sh
-│   ├── make.sh
+│   ├── run.sh
 │   ├── ...
 │   └── 21-upgrade/
 │
@@ -123,7 +123,7 @@ cd virt-poc-*/00-prepare
 ./install.sh
 cd ..
 ./setup.sh
-./make.sh start
+./run.sh start
 ```
 
 ---
@@ -134,10 +134,10 @@ cd ..
 cd en  # or ko
 
 # Option 1: Fast full cleanup
-./make.sh reset
+./run.sh reset
 
 # Option 2: Gradual cleanup (reverse order)
-./make.sh cleanup
+./run.sh cleanup
 ```
 
 ---

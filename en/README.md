@@ -7,7 +7,7 @@ OpenShift Virtualization POC — automated scripts for air-gapped environments.
 ```bash
 cd en
 ./setup.sh          # Configure environment (creates env.conf)
-./make.sh start     # Run all labs (01-21)
+./run.sh start     # Run all labs (01-21)
 ./check-features.sh # Verify features
 ```
 
@@ -66,5 +66,6 @@ cd en
 ## Reference
 
 - [Execution Order](EXECUTION-ORDER.md)
+- [Resource Inventory](RESOURCE-INVENTORY.md) — Namespaces, VMs, and resources created by each lab
 - [reset vs cleanup](RESET-vs-CLEANUP.md)
 - [Environment Config Example](env.conf.example)

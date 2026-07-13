@@ -11,7 +11,7 @@ This is an OpenShift Virtualization POC project with 21 numbered lab directories
 ```
 en/                              ← English (fully self-contained)
 ├── setup.sh
-├── make.sh
+├── run.sh
 ├── check-features.sh
 ├── env.conf.example
 ├── utils/common.sh
@@ -22,7 +22,7 @@ en/                              ← English (fully self-contained)
 
 ko/                              ← Korean (fully self-contained)
 ├── setup.sh
-├── make.sh
+├── run.sh
 ├── check-features.sh
 ├── env.conf.example
 ├── utils/common.sh

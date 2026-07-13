@@ -55,7 +55,7 @@ oc login https://api.cluster.example.com:6443
 ### 5단계: 전체 Lab 실행
 
 ```bash
-./make.sh
+./run.sh
 ```
 
 또는 개별 실행:
@@ -190,7 +190,7 @@ cd ..
 #### 2-7. 전체 Lab 실행
 
 ```bash
-./make.sh
+./run.sh
 ```
 
 #### 2-8. 기능 검증
@@ -203,7 +203,7 @@ cd ..
 
 ## 상세 실행 순서 (개별 Lab)
 
-`./make.sh` 대신 개별 Lab을 순서대로 실행하려면:
+`./run.sh` 대신 개별 Lab을 순서대로 실행하려면:
 
 ### 기본 설정 (필수)
 
@@ -353,7 +353,7 @@ oc get network-attachment-definitions -A
 oc get vm,vmi -A
 ```
 
-### make.sh 완료 후
+### run.sh 완료 후
 
 ```bash
 # 전체 기능 검증
@@ -443,7 +443,7 @@ cd ..
 ./setup.sh
 
 # 2. 전체 Lab 실행 (자동)
-./make.sh
+./run.sh
 
 # 3. 검증
 ./check-features.sh
@@ -480,12 +480,12 @@ less operators/iscsi-storage.md
 ## 요약
 
 ### 인터넷 연결 환경
-1. `git clone` → 2. `oc login` → 3. Operator 설치 → 4. `./setup.sh` → 5. `./make.sh` → 6. `./check-features.sh`
+1. `git clone` → 2. `oc login` → 3. Operator 설치 → 4. `./setup.sh` → 5. `./run.sh` → 6. `./check-features.sh`
 
 ### Air-gapped 환경
 **준비:** `git clone` → `cd 00-prepare` → `./download.sh` → `./package.sh` → 전송
 
-**배포:** 추출 → `oc login` → `./install.sh` → `./setup.sh` → `./make.sh` → `./check-features.sh`
+**배포:** 추출 → `oc login` → `./install.sh` → `./setup.sh` → `./run.sh` → `./check-features.sh`
 
 ---
 
@@ -495,7 +495,7 @@ less operators/iscsi-storage.md
 
 ```bash
 # 모든 POC 리소스 삭제 및 파일 정리
-./make.sh reset
+./run.sh reset
 ```
 
 ### 삭제되는 항목
@@ -522,13 +522,13 @@ Clean 후 처음부터 다시 시작:
 
 ```bash
 # 1. Clean (이미 실행했다면 생략)
-./make.sh reset
+./run.sh reset
 
 # 2. 환경 재설정 (env.conf 재생성하려면)
 ./setup.sh
 
 # 3. 전체 Lab 재실행
-./make.sh start
+./run.sh start
 
 # 4. 검증
 ./check-features.sh

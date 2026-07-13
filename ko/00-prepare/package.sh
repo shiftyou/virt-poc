@@ -229,7 +229,7 @@ main() {
     print_info "다음 단계:"
     echo "  1. env.conf 설정을 검토하세요"
     echo "  2. 실행: ./setup.sh"
-    echo "  3. 실행: ./make.sh"
+    echo "  3. 실행: ./run.sh"
     echo ""
     print_info "RHEL9 이미지 업로드:"
     echo "  cd 01-template"
@@ -340,7 +340,7 @@ virt-poc/
 
 5. **Run all labs**
    ```bash
-   ./make.sh
+   ./run.sh
    ```
    Or run individual labs:
    ```bash
