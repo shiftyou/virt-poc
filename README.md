@@ -35,7 +35,7 @@ cd en    # English
 ./poc.sh start
 
 # 5. Verify all features
-./check-features.sh
+./check.sh
 ```
 
 ---
@@ -47,7 +47,7 @@ virt-poc/
 ├── en/                       # English version (fully self-contained)
 │   ├── setup.sh              # Environment configuration
 │   ├── poc.sh               # Run all labs in order
-│   ├── check-features.sh     # Verify all features
+│   ├── check.sh     # Verify all features
 │   ├── env.conf.example      # Environment config template
 │   ├── utils/                # Shared utilities
 │   ├── operators/            # Operator installation guides

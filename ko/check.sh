@@ -1,12 +1,12 @@
 #!/bin/bash
 # =============================================================================
-# check-features.sh
+# check.sh
 #
 # OpenShift Virtualization 기능 검증 스크립트
 #
 # 모든 lab의 주요 기능 및 구성을 점검합니다
 #
-# 사용법: ./check-features.sh [--verbose]
+# 사용법: ./check.sh [--verbose]
 # =============================================================================
 
 set -uo pipefail
@@ -82,10 +82,12 @@ preflight() {
     fi
     test_pass "연결됨: $(oc whoami --show-server) (사용자: $(oc whoami))"
 
+    CSV_CACHE=$(oc get csv -A 2>/dev/null || true)
+
     test_start "OpenShift Virtualization Operator"
-    if oc get csv -n openshift-cnv 2>/dev/null | grep -qi "kubevirt-hyperconverged"; then
+    if echo "$CSV_CACHE" | grep -qi "kubevirt-hyperconverged"; then
         local version
-        version=$(oc get csv -n openshift-cnv -o jsonpath='{.items[0].spec.version}' 2>/dev/null | head -1)
+        version=$(echo "$CSV_CACHE" | grep -i "kubevirt-hyperconverged" | awk '{print $NF}' | head -1)
         test_pass "OpenShift Virtualization 설치됨 (버전: ${version:-알 수 없음})"
     else
         test_fail "OpenShift Virtualization 미설치"
@@ -134,7 +136,7 @@ check_network() {
     print_section "Lab 02: 네트워크 설정"
 
     test_start "NMState Operator"
-    if oc get csv -A 2>/dev/null | grep -qi "kubernetes-nmstate"; then
+    if echo "$CSV_CACHE" | grep -qi "kubernetes-nmstate"; then
         test_pass "NMState Operator 설치됨"
     else
         test_warn "NMState Operator 미설치"
@@ -254,7 +256,7 @@ check_descheduler() {
     print_section "Lab 07: Descheduler"
 
     test_start "Kube Descheduler Operator"
-    if oc get csv -A 2>/dev/null | grep -qi "descheduler"; then
+    if echo "$CSV_CACHE" | grep -qi "descheduler"; then
         test_pass "Descheduler Operator 설치됨"
     else
         test_warn "Descheduler Operator 미설치"
@@ -317,14 +319,14 @@ check_monitoring() {
     fi
 
     test_start "Cluster Observability Operator"
-    if oc get csv -A 2>/dev/null | grep -qi "cluster-observability"; then
+    if echo "$CSV_CACHE" | grep -qi "cluster-observability"; then
         test_pass "COO 설치됨"
     else
         test_warn "COO 미설치"
     fi
 
     test_start "Grafana Operator"
-    if oc get csv -A 2>/dev/null | grep -qi "grafana-operator"; then
+    if echo "$CSV_CACHE" | grep -qi "grafana-operator"; then
         test_pass "Grafana Operator 설치됨"
     else
         test_warn "Grafana Operator 미설치"
@@ -338,7 +340,7 @@ check_mtv() {
     print_section "Lab 13: MTV (마이그레이션)"
 
     test_start "MTV Operator"
-    if oc get csv -A 2>/dev/null | grep -qi "mtv-operator\|forklift"; then
+    if echo "$CSV_CACHE" | grep -qi "mtv-operator\|forklift"; then
         test_pass "MTV Operator 설치됨"
     else
         test_warn "MTV Operator 미설치"
@@ -352,7 +354,7 @@ check_oadp() {
     print_section "Lab 14: OADP (백업/복원)"
 
     test_start "OADP Operator"
-    if oc get csv -A 2>/dev/null | grep -qi "oadp"; then
+    if echo "$CSV_CACHE" | grep -qi "oadp"; then
         test_pass "OADP Operator 설치됨"
     else
         test_warn "OADP Operator 미설치"
@@ -390,21 +392,21 @@ check_node_management() {
     print_section "Lab 15-17: 노드 관리 및 복구"
 
     test_start "Node Maintenance Operator"
-    if oc get csv -A 2>/dev/null | grep -qi "node-maintenance"; then
+    if echo "$CSV_CACHE" | grep -qi "node-maintenance"; then
         test_pass "Node Maintenance Operator 설치됨"
     else
         test_warn "Node Maintenance Operator 미설치"
     fi
 
     test_start "Self Node Remediation Operator"
-    if oc get csv -A 2>/dev/null | grep -qi "self-node-remediation"; then
+    if echo "$CSV_CACHE" | grep -qi "self-node-remediation"; then
         test_pass "SNR Operator 설치됨"
     else
         test_warn "SNR Operator 미설치"
     fi
 
     test_start "Fence Agents Remediation Operator"
-    if oc get csv -A 2>/dev/null | grep -qi "fence-agents"; then
+    if echo "$CSV_CACHE" | grep -qi "fence-agents"; then
         test_pass "FAR Operator 설치됨"
     else
         test_warn "FAR Operator 미설치"
@@ -443,14 +445,14 @@ check_logging() {
     print_section "Lab 20: Logging"
 
     test_start "OpenShift Logging Operator"
-    if oc get csv -A 2>/dev/null | grep -qi "cluster-logging"; then
+    if echo "$CSV_CACHE" | grep -qi "cluster-logging"; then
         test_pass "Logging Operator 설치됨"
     else
         test_warn "Logging Operator 미설치"
     fi
 
     test_start "Loki Operator"
-    if oc get csv -A 2>/dev/null | grep -qi "loki-operator"; then
+    if echo "$CSV_CACHE" | grep -qi "loki-operator"; then
         test_pass "Loki Operator 설치됨"
     else
         test_warn "Loki Operator 미설치"

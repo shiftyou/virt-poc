@@ -73,7 +73,7 @@ cd ../02-network
 ### 6단계: 기능 검증
 
 ```bash
-./check-features.sh
+./check.sh
 ```
 
 ---
@@ -98,15 +98,10 @@ cd virt-poc
 ```
 
 **다운로드되는 파일:**
-- Garage 컨테이너 이미지 (자동)
-- node_exporter 바이너리 (자동)
-- mc 클라이언트 (자동)
-- RHEL9 qcow2 (수동 - Red Hat 포털에서)
-
-**RHEL9 이미지 수동 다운로드:**
-1. https://access.redhat.com/downloads/content/rhel 접속
-2. RHEL 9.5 KVM Guest Image 다운로드
-3. `downloads/images/` 폴더에 저장
+- poc-golden.qcow2 (Golden Image)
+- Garage 컨테이너 이미지 (podman/docker)
+- mc 클라이언트 (MinIO/Garage 관리 도구)
+- VMware VDDK (VMware 마이그레이션용)
 
 #### 1-3. 배포 패키지 생성
 
@@ -194,7 +189,7 @@ cd en   # 또는 cd ko
 #### 2-8. 기능 검증
 
 ```bash
-./check-features.sh
+./check.sh
 ```
 
 ---
@@ -355,7 +350,7 @@ oc get vm,vmi -A
 
 ```bash
 # 전체 기능 검증
-./check-features.sh
+./check.sh
 
 # VM 상태 확인
 oc get vm,vmi -A
@@ -374,7 +369,7 @@ oc get backup -n openshift-adp
 ### 1. 현재 상태 확인
 
 ```bash
-./check-features.sh --verbose
+./check.sh --verbose
 ```
 
 ### 2. 실패한 Lab만 재실행
@@ -427,7 +422,7 @@ cd ../03-vm-workload && ./03-vm-workload.sh
 
 # 3. 검증
 cd ..
-./check-features.sh
+./check.sh
 ```
 
 ---
@@ -444,7 +439,7 @@ cd ..
 ./poc.sh
 
 # 3. 검증
-./check-features.sh
+./check.sh
 
 # 4. 개별 기능 테스트
 # - VM 생성 및 마이그레이션
@@ -478,12 +473,12 @@ less operators/iscsi-storage.md
 ## 요약
 
 ### 인터넷 연결 환경
-1. `git clone` → 2. `oc login` → 3. Operator 설치 → 4. `./setup.sh` → 5. `./poc.sh` → 6. `./check-features.sh`
+1. `git clone` → 2. `oc login` → 3. Operator 설치 → 4. `./setup.sh` → 5. `./poc.sh` → 6. `./check.sh`
 
 ### Air-gapped 환경
 **준비:** `git clone` → `./download.sh` → `./package.sh` → 전송
 
-**배포:** 추출 → `oc login` → `./install.sh` → `cd ko` → `./setup.sh` → `./poc.sh` → `./check-features.sh`
+**배포:** 추출 → `oc login` → `./install.sh` → `cd ko` → `./setup.sh` → `./poc.sh` → `./check.sh`
 
 ---
 
@@ -529,7 +524,7 @@ less operators/iscsi-storage.md
 ./poc.sh start
 
 # 4. 검증
-./check-features.sh
+./check.sh
 ```
 
 ### 부분 초기화
