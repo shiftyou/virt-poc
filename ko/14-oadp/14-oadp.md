@@ -195,25 +195,25 @@ oc wait --for=condition=ready pod -l app=garage -n poc-garage --timeout=300s
 GARAGE_POD=$(oc get pod -n poc-garage -l app=garage -o jsonpath='{.items[0].metadata.name}')
 
 # 노드 ID 조회
-NODE_ID=$(oc exec -n poc-garage $GARAGE_POD -- garage node id | grep "Node ID:" | awk '{print $3}')
+NODE_ID=$(oc exec -n poc-garage $GARAGE_POD -- /garage node id | grep "Node ID:" | awk '{print $3}')
 
 # 레이아웃 구성 (단일 노드 설정)
-oc exec -n poc-garage $GARAGE_POD -- garage layout assign -z dc1 -c 1 $NODE_ID
+oc exec -n poc-garage $GARAGE_POD -- /garage layout assign -z dc1 -c 1 $NODE_ID
 
 # 레이아웃 적용
-oc exec -n poc-garage $GARAGE_POD -- garage layout apply --version 1
+oc exec -n poc-garage $GARAGE_POD -- /garage layout apply --version 1
 
 # 버킷 생성
-oc exec -n poc-garage $GARAGE_POD -- garage bucket create velero-backups
+oc exec -n poc-garage $GARAGE_POD -- /garage bucket create velero-backups
 
 # 자격 증명으로 버킷 접근 허용
-oc exec -n poc-garage $GARAGE_POD -- garage bucket allow \
+oc exec -n poc-garage $GARAGE_POD -- /garage bucket allow \
   --read --write \
   velero-backups \
   --key garageadmin
 
 # 버킷 확인
-oc exec -n poc-garage $GARAGE_POD -- garage bucket list
+oc exec -n poc-garage $GARAGE_POD -- /garage bucket list
 ```
 
 ### 4. 기동 확인

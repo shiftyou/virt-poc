@@ -195,25 +195,25 @@ oc wait --for=condition=ready pod -l app=garage -n poc-garage --timeout=300s
 GARAGE_POD=$(oc get pod -n poc-garage -l app=garage -o jsonpath='{.items[0].metadata.name}')
 
 # Get node ID
-NODE_ID=$(oc exec -n poc-garage $GARAGE_POD -- garage node id | grep "Node ID:" | awk '{print $3}')
+NODE_ID=$(oc exec -n poc-garage $GARAGE_POD -- /garage node id | grep "Node ID:" | awk '{print $3}')
 
 # Configure layout (single-node setup)
-oc exec -n poc-garage $GARAGE_POD -- garage layout assign -z dc1 -c 1 $NODE_ID
+oc exec -n poc-garage $GARAGE_POD -- /garage layout assign -z dc1 -c 1 $NODE_ID
 
 # Apply layout
-oc exec -n poc-garage $GARAGE_POD -- garage layout apply --version 1
+oc exec -n poc-garage $GARAGE_POD -- /garage layout apply --version 1
 
 # Create bucket
-oc exec -n poc-garage $GARAGE_POD -- garage bucket create velero-backups
+oc exec -n poc-garage $GARAGE_POD -- /garage bucket create velero-backups
 
 # Allow bucket access with credentials
-oc exec -n poc-garage $GARAGE_POD -- garage bucket allow \
+oc exec -n poc-garage $GARAGE_POD -- /garage bucket allow \
   --read --write \
   velero-backups \
   --key garageadmin
 
 # Verify bucket
-oc exec -n poc-garage $GARAGE_POD -- garage bucket list
+oc exec -n poc-garage $GARAGE_POD -- /garage bucket list
 ```
 
 ### 4. Verify Startup

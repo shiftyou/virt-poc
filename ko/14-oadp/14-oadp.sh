@@ -226,7 +226,7 @@ EOF
     garage_pod=$(oc get pod -n poc-garage -l app=garage -o jsonpath='{.items[0].metadata.name}')
 
     local id_output
-    id_output=$(oc exec -n poc-garage "$garage_pod" -- garage node id 2>&1 || true)
+    id_output=$(oc exec -n poc-garage "$garage_pod" -- /garage node id 2>&1 || true)
     # "Node ID: <hex>" 형식
     node_id=$(echo "$id_output" | grep -i "Node ID" | awk '{print $NF}')
     # "<hex>@<addr>" 형식
@@ -239,14 +239,14 @@ EOF
     fi
     print_info "Garage 노드 ID: ${node_id}"
 
-    oc exec -n poc-garage "$garage_pod" -- garage layout assign -z dc1 -c 1G "$node_id" 2>&1 || true
-    oc exec -n poc-garage "$garage_pod" -- garage layout apply --version 1 2>&1 || true
+    oc exec -n poc-garage "$garage_pod" -- /garage layout assign -z dc1 -c 1G "$node_id" 2>&1 || true
+    oc exec -n poc-garage "$garage_pod" -- /garage layout apply --version 1 2>&1 || true
     print_ok "Garage 레이아웃 구성 완료"
 
-    oc exec -n poc-garage "$garage_pod" -- garage bucket create velero 2>&1 || true
-    oc exec -n poc-garage "$garage_pod" -- garage key import --yes garageadmin garageadmin 2>&1 || \
-        oc exec -n poc-garage "$garage_pod" -- garage key create --name garageadmin 2>&1 || true
-    oc exec -n poc-garage "$garage_pod" -- garage bucket allow --read --write velero --key garageadmin 2>&1 || true
+    oc exec -n poc-garage "$garage_pod" -- /garage bucket create velero 2>&1 || true
+    oc exec -n poc-garage "$garage_pod" -- /garage key import --yes garageadmin garageadmin 2>&1 || \
+        oc exec -n poc-garage "$garage_pod" -- /garage key create --name garageadmin 2>&1 || true
+    oc exec -n poc-garage "$garage_pod" -- /garage bucket allow --read --write velero --key garageadmin 2>&1 || true
     print_ok "버킷 'velero' 생성 및 접근 권한 부여됨"
 
     print_ok "Garage S3 설치 완료"
