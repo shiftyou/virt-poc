@@ -66,7 +66,6 @@ virt-poc/
 ├── download.sh               # Air-gapped file downloader
 ├── package.sh                # Air-gapped tarball packager
 ├── AIRGAP.md                 # Air-gapped preparation guide
-├── CLAUDE.md                 # Project conventions
 └── README.md                 # This file
 ```
 

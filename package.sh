@@ -41,7 +41,15 @@ preflight() {
         exit 1
     fi
 
-    print_ok "Downloads directory found"
+    local file_count
+    file_count=$(find "${SCRIPT_DIR}/downloads" -type f ! -name "*.placeholder" | wc -l | tr -d ' ')
+    if [ "$file_count" -eq 0 ]; then
+        print_error "downloads directory is empty."
+        print_error "Please run ./download.sh first."
+        exit 1
+    fi
+
+    print_ok "Downloads directory found (${file_count} files)"
 }
 
 # =============================================================================
@@ -183,14 +191,11 @@ verify_downloads() {
     echo ""
     print_info "Download verification:"
 
-    # Check RHEL9 image
-    local rhel_img
-    rhel_img=$(ls -t "${DOWNLOAD_DIR}/images/rhel-"*.qcow2 2>/dev/null | head -1 || true)
-    if [ -n "$rhel_img" ]; then
-        print_ok "RHEL9 image: $(basename "$rhel_img") ($(du -h "$rhel_img" | cut -f1))"
+    # Check golden image
+    if [ -f "${DOWNLOAD_DIR}/images/poc-golden.qcow2" ]; then
+        print_ok "Golden image: poc-golden.qcow2 ($(du -h "${DOWNLOAD_DIR}/images/poc-golden.qcow2" | cut -f1))"
     else
-        print_warn "RHEL9 image not found - please download manually"
-        print_warn "  See: ${DOWNLOAD_DIR}/images/README.txt"
+        print_warn "Golden image not found - run download.sh first"
     fi
 
     # Check Garage

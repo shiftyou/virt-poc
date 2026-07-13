@@ -36,21 +36,21 @@ print_step()  { echo -e "\n${CYAN}━━━ $1 ━━━${NC}"; }
 # Configuration
 # =============================================================================
 
-# RHEL9 image (replace with your actual download URL)
-RHEL9_IMAGE_URL="${RHEL9_IMAGE_URL:-https://access.redhat.com/downloads/content/rhel}"
-RHEL9_IMAGE_NAME="rhel-9.5-x86_64-kvm.qcow2"
+# Golden image
+GOLDEN_IMAGE_URL="${GOLDEN_IMAGE_URL:-http://146.56.160.95/poc-golden.qcow2}"
+GOLDEN_IMAGE_NAME="poc-golden.qcow2"
 
-# Garage version
+# Garage container image
 GARAGE_VERSION="v1.0.1"
 GARAGE_IMAGE="docker.io/dxflrs/garage:${GARAGE_VERSION}"
-
-# Node exporter version
-NODE_EXPORTER_VERSION="1.10.2"
-NODE_EXPORTER_URL="https://github.com/prometheus/node_exporter/releases/download/v${NODE_EXPORTER_VERSION}/node_exporter-${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz"
 
 # MC (MinIO Client) version
 MC_VERSION="latest"
 MC_URL="https://dl.min.io/client/mc/release/linux-amd64/mc"
+
+# VMware VDDK
+VDDK_URL="${VDDK_URL:-http://146.56.160.95/VMware-vix-disklib-8.0.3-23950268.x86_64.tar.gz}"
+VDDK_NAME="VMware-vix-disklib-8.0.3-23950268.x86_64.tar.gz"
 
 # =============================================================================
 # Preflight checks
@@ -59,7 +59,7 @@ preflight() {
     print_step "Pre-flight checks"
 
     # Check required commands
-    local required_cmds=("curl" "wget" "podman")
+    local required_cmds=("curl")
     for cmd in "${required_cmds[@]}"; do
         if ! command -v "$cmd" &>/dev/null; then
             print_error "Required command not found: $cmd"
@@ -69,53 +69,42 @@ preflight() {
     done
     print_ok "Required commands available"
 
+    CONTAINER_CMD=""
+    if command -v podman &>/dev/null; then
+        CONTAINER_CMD="podman"
+    elif command -v docker &>/dev/null; then
+        CONTAINER_CMD="docker"
+    fi
+
+    if [ -n "$CONTAINER_CMD" ]; then
+        print_ok "Container runtime: $CONTAINER_CMD"
+    else
+        print_warn "No container runtime (podman/docker) — Garage image export will be skipped"
+    fi
+
     # Create download directory
     mkdir -p "$DOWNLOAD_DIR"/{images,binaries,containers}
     print_ok "Download directory created: ${DOWNLOAD_DIR}"
 }
 
 # =============================================================================
-# Download RHEL9 qcow2 image
+# Download golden qcow2 image
 # =============================================================================
-download_rhel9() {
-    print_step "1/5  Download RHEL9 qcow2 image"
+download_golden() {
+    print_step "1/5  Download golden qcow2 image"
 
-    local target="${DOWNLOAD_DIR}/images/${RHEL9_IMAGE_NAME}"
+    local target="${DOWNLOAD_DIR}/images/${GOLDEN_IMAGE_NAME}"
 
     if [ -f "$target" ]; then
-        print_ok "RHEL9 image already exists: ${target}"
+        print_ok "Golden image already exists: ${target}"
         return
     fi
 
-    echo ""
-    print_warn "RHEL9 image download requires Red Hat subscription."
-    print_info "Please download manually from: https://access.redhat.com/downloads/content/rhel"
-    print_info "Download: RHEL 9.5 KVM Guest Image (rhel-9.5-x86_64-kvm.qcow2)"
-    print_info "Save to: ${target}"
-    echo ""
-    read -r -p "Have you already downloaded the RHEL9 image? [y/N]: " confirm
+    print_info "Downloading from: ${GOLDEN_IMAGE_URL}"
+    curl -L -o "$target" "${GOLDEN_IMAGE_URL}"
 
-    if [[ "$confirm" =~ ^[Yy]$ ]]; then
-        read -r -p "Enter the full path to RHEL9 qcow2 image: " rhel_path
-        if [ -f "$rhel_path" ]; then
-            cp "$rhel_path" "$target"
-            print_ok "RHEL9 image copied: ${target}"
-        else
-            print_error "File not found: $rhel_path"
-            exit 1
-        fi
-    else
-        print_warn "Skipping RHEL9 image download (you can add it later)"
-        touch "${target}.placeholder"
-        cat > "${DOWNLOAD_DIR}/images/README.txt" <<EOF
-Please download RHEL9 KVM Guest Image manually:
-
-1. Go to: https://access.redhat.com/downloads/content/rhel
-2. Download: RHEL 9.5 KVM Guest Image (rhel-9.5-x86_64-kvm.qcow2)
-3. Place it here: ${target}
-4. Re-run package.sh to create the final tarball
-EOF
-    fi
+    print_ok "Golden image downloaded: ${target}"
+    ls -lh "$target"
 }
 
 # =============================================================================
@@ -131,33 +120,18 @@ download_garage() {
         return
     fi
 
-    print_info "Pulling Garage image: ${GARAGE_IMAGE}"
-    podman pull "${GARAGE_IMAGE}"
-
-    print_info "Exporting to tar: ${target}"
-    podman save -o "$target" "${GARAGE_IMAGE}"
-
-    print_ok "Garage image exported: ${target}"
-    ls -lh "$target"
-}
-
-# =============================================================================
-# Download node_exporter binary
-# =============================================================================
-download_node_exporter() {
-    print_step "3/5  Download node_exporter binary"
-
-    local target="${DOWNLOAD_DIR}/binaries/node_exporter-${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz"
-
-    if [ -f "$target" ]; then
-        print_ok "node_exporter already exists: ${target}"
+    if [ -z "$CONTAINER_CMD" ]; then
+        print_warn "Skipping Garage export (podman/docker not available)"
         return
     fi
 
-    print_info "Downloading from: ${NODE_EXPORTER_URL}"
-    curl -L -o "$target" "${NODE_EXPORTER_URL}"
+    print_info "Pulling Garage image: ${GARAGE_IMAGE} (via $CONTAINER_CMD)"
+    $CONTAINER_CMD pull "${GARAGE_IMAGE}"
 
-    print_ok "node_exporter downloaded: ${target}"
+    print_info "Exporting to tar: ${target}"
+    $CONTAINER_CMD save -o "$target" "${GARAGE_IMAGE}"
+
+    print_ok "Garage image exported: ${target}"
     ls -lh "$target"
 }
 
@@ -165,7 +139,7 @@ download_node_exporter() {
 # Download mc (MinIO Client) binary
 # =============================================================================
 download_mc() {
-    print_step "4/5  Download mc (MinIO/Garage Client) binary"
+    print_step "3/5  Download mc (MinIO/Garage Client) binary"
 
     local target="${DOWNLOAD_DIR}/binaries/mc"
 
@@ -179,6 +153,26 @@ download_mc() {
     chmod +x "$target"
 
     print_ok "mc binary downloaded: ${target}"
+    ls -lh "$target"
+}
+
+# =============================================================================
+# Download VMware VDDK
+# =============================================================================
+download_vddk() {
+    print_step "4/5  Download VMware VDDK"
+
+    local target="${DOWNLOAD_DIR}/binaries/${VDDK_NAME}"
+
+    if [ -f "$target" ]; then
+        print_ok "VDDK already exists: ${target}"
+        return
+    fi
+
+    print_info "Downloading from: ${VDDK_URL}"
+    curl -L -o "$target" "${VDDK_URL}"
+
+    print_ok "VDDK downloaded: ${target}"
     ls -lh "$target"
 }
 
@@ -197,8 +191,8 @@ Script Version: 1.0
 
 Files:
 ------
-1. RHEL9 Image:
-   - Path: images/${RHEL9_IMAGE_NAME}
+1. Golden Image:
+   - Path: images/${GOLDEN_IMAGE_NAME}
    - Purpose: VM template creation (01-template)
 
 2. Garage Container:
@@ -206,14 +200,13 @@ Files:
    - Version: ${GARAGE_VERSION}
    - Purpose: S3 object storage for OADP/Logging (14-oadp, 20-logging)
 
-3. Node Exporter:
-   - Path: binaries/node_exporter-${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz
-   - Version: ${NODE_EXPORTER_VERSION}
-   - Purpose: VM monitoring (10-node-exporter)
-
-4. MC Client:
+3. MC Client:
    - Path: binaries/mc
    - Purpose: S3/Garage bucket management
+
+4. VMware VDDK:
+   - Path: binaries/${VDDK_NAME}
+   - Purpose: VMware migration (13-mtv)
 
 Installation:
 -------------
@@ -243,10 +236,10 @@ main() {
     echo ""
 
     preflight
-    download_rhel9
+    download_golden
     download_garage
-    download_node_exporter
     download_mc
+    download_vddk
     create_metadata
 
     echo ""
