@@ -4,13 +4,9 @@ env.conf
 # VM 이미지 파일 (용량이 크므로 git 관리 제외)
 *.qcow2
 
-# 스크립트 실행 시 생성되는 임시 yaml (poc-setup/ 하위에도 생성됨)
-poc-setup/
-
 # 번호 디렉토리 내 스크립트 실행 결과물 yaml (20-upgrade 제외)
 [0-9][0-9]-*/*.yaml
 [0-9][0-9]-*/*.json
-[0-9][0-9]-*/nncp-*.yaml
 !20-upgrade/*.yaml
 
 # macOS

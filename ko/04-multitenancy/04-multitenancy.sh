@@ -44,7 +44,7 @@ HTPASSWD_IDP_NAME="poc-htpasswd"
 HTPASSWD_TMP="/tmp/poc-htpasswd-$$"
 
 DATASOURCE_NS="${DATASOURCE_NS:-openshift-virtualization-os-images}"
-DATASOURCE_NAME="${DATASOURCE_NAME:-poc}"
+DATASOURCE_NAME="${DATASOURCE_NAME:-poc-golden}"
 STORAGE_CLASS="${STORAGE_CLASS:-}"
 
 # =============================================================================
@@ -346,7 +346,7 @@ print_summary() {
     echo -e "  # user2 — ${NS1} view (VM 생성 불가)"
     echo -e "  ${CYAN}oc login -u ${USER2} -p '${DEFAULT_PASS}' ${api_url}${NC}"
     echo -e "  ${CYAN}oc get vm -n ${NS1}${NC}           # 성공 (읽기)"
-    echo -e "  ${CYAN}oc create -f vm.yaml -n ${NS1}${NC} # 거부됨 (view 전용)"
+    echo -e "  ${CYAN}oc create -f poc-mt-vm-1.yaml -n ${NS1}${NC} # 거부됨 (view 전용)"
     echo ""
     echo -e "  # user3 — ${NS2} admin (VM 생성 가능)"
     echo -e "  ${CYAN}oc login -u ${USER3} -p '${DEFAULT_PASS}' ${api_url}${NC}"
@@ -356,7 +356,7 @@ print_summary() {
     echo -e "  # user4 — ${NS2} view (VM 생성 불가)"
     echo -e "  ${CYAN}oc login -u ${USER4} -p '${DEFAULT_PASS}' ${api_url}${NC}"
     echo -e "  ${CYAN}oc get vm -n ${NS2}${NC}           # 성공 (읽기)"
-    echo -e "  ${CYAN}oc create -f vm.yaml -n ${NS2}${NC} # 거부됨 (view 전용)"
+    echo -e "  ${CYAN}oc create -f poc-mt-vm-2.yaml -n ${NS2}${NC} # 거부됨 (view 전용)"
     echo ""
     echo -e "  자세한 내용: 04-multitenancy.md 참조"
     echo ""
