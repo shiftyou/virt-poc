@@ -9,6 +9,12 @@ env.conf
 [0-9][0-9]-*/*.json
 !21-upgrade/*.yaml
 
+# download.sh 로 생성되는 다운로드 파일
+downloads/
+
+# package.sh 로 생성되는 배포 tarball
+virt-poc-*.tar.gz
+
 # macOS
 .DS_Store
 *.swp
