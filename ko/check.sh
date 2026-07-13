@@ -90,12 +90,12 @@ preflight() {
     fi
     test_pass "연결됨: $(oc whoami --show-server) (사용자: $(oc whoami))"
 
-    CSV_CACHE=$(oc get csv -A 2>/dev/null || true)
+    oc get csv -A 2>/dev/null > /tmp/_poc_csv.txt || true
 
     test_start "OpenShift Virtualization Operator"
-    if echo "$CSV_CACHE" | grep -qi "kubevirt-hyperconverged"; then
+    if grep -qi "kubevirt-hyperconverged" /tmp/_poc_csv.txt 2>/dev/null; then
         local version
-        version=$(echo "$CSV_CACHE" | grep -i "kubevirt-hyperconverged" | awk '{print $NF}' | head -1)
+        version=$(grep -i "kubevirt-hyperconverged" /tmp/_poc_csv.txt | awk '{print $NF}' | head -1)
         test_pass "OpenShift Virtualization 설치됨 (버전: ${version:-알 수 없음})"
     else
         test_fail "OpenShift Virtualization 미설치"
@@ -144,7 +144,7 @@ check_network() {
     print_section "Lab 02: 네트워크 설정"
 
     test_start "NMState Operator"
-    if echo "$CSV_CACHE" | grep -qi "kubernetes-nmstate"; then
+    if grep -qi "kubernetes-nmstate" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "NMState Operator 설치됨"
     else
         test_blocked "NMState Operator 미설치"
@@ -216,8 +216,14 @@ check_multitenancy() {
     fi
 
     test_start "RBAC 설정"
-    local rb_count
-    rb_count=$(oc get rolebinding -n poc-multitenancy-1 -n poc-multitenancy-2 2>/dev/null | grep -E "user[1-4]" | wc -l)
+    local rb_count=0
+    for _ns in poc-multitenancy-1 poc-multitenancy-2; do
+        local _c
+        _c=$(oc get rolebindings -n "$_ns" --no-headers \
+            -o custom-columns='SUBJECT:.subjects[0].name' 2>/dev/null | \
+            grep -cE "user[1-4]" || true)
+        rb_count=$((rb_count + _c))
+    done
     if [ "$rb_count" -gt 0 ]; then
         test_pass "멀티테넌시 RoleBinding: ${rb_count}개 발견"
     else
@@ -264,7 +270,7 @@ check_descheduler() {
     print_section "Lab 07: Descheduler"
 
     test_start "Kube Descheduler Operator"
-    if echo "$CSV_CACHE" | grep -qi "descheduler"; then
+    if grep -qi "descheduler" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "Descheduler Operator 설치됨"
     else
         test_blocked "Descheduler Operator 미설치"
@@ -327,14 +333,14 @@ check_monitoring() {
     fi
 
     test_start "Cluster Observability Operator"
-    if echo "$CSV_CACHE" | grep -qi "cluster-observability"; then
+    if grep -qi "cluster-observability" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "COO 설치됨"
     else
         test_blocked "COO 미설치"
     fi
 
     test_start "Grafana Operator"
-    if echo "$CSV_CACHE" | grep -qi "grafana-operator"; then
+    if grep -qi "grafana-operator" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "Grafana Operator 설치됨"
     else
         test_blocked "Grafana Operator 미설치"
@@ -348,7 +354,7 @@ check_mtv() {
     print_section "Lab 13: MTV (마이그레이션)"
 
     test_start "MTV Operator"
-    if echo "$CSV_CACHE" | grep -qi "mtv-operator\|forklift"; then
+    if grep -qi "mtv-operator\|forklift" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "MTV Operator 설치됨"
     else
         test_blocked "MTV Operator 미설치"
@@ -362,7 +368,7 @@ check_oadp() {
     print_section "Lab 14: OADP (백업/복원)"
 
     test_start "OADP Operator"
-    if echo "$CSV_CACHE" | grep -qi "oadp"; then
+    if grep -qi "oadp" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "OADP Operator 설치됨"
     else
         test_blocked "OADP Operator 미설치"
@@ -400,28 +406,28 @@ check_node_management() {
     print_section "Lab 15-17: 노드 관리 및 복구"
 
     test_start "Node Maintenance Operator"
-    if echo "$CSV_CACHE" | grep -qi "node-maintenance"; then
+    if grep -qi "node-maintenance" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "Node Maintenance Operator 설치됨"
     else
         test_blocked "Node Maintenance Operator 미설치"
     fi
 
     test_start "Node Health Check Operator"
-    if echo "$CSV_CACHE" | grep -qi "node-healthcheck"; then
+    if grep -qi "node-healthcheck" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "NHC Operator 설치됨"
     else
         test_blocked "NHC Operator 미설치"
     fi
 
     test_start "Self Node Remediation Operator"
-    if echo "$CSV_CACHE" | grep -qi "self-node-remediation"; then
+    if grep -qi "self-node-remediation" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "SNR Operator 설치됨"
     else
         test_blocked "SNR Operator 미설치"
     fi
 
     test_start "Fence Agents Remediation Operator"
-    if echo "$CSV_CACHE" | grep -qi "fence-agents"; then
+    if grep -qi "fence-agents" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "FAR Operator 설치됨"
     else
         test_blocked "FAR Operator 미설치"
@@ -460,14 +466,14 @@ check_logging() {
     print_section "Lab 20: Logging"
 
     test_start "OpenShift Logging Operator"
-    if echo "$CSV_CACHE" | grep -qi "cluster-logging"; then
+    if grep -qi "cluster-logging" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "Logging Operator 설치됨"
     else
         test_blocked "Logging Operator 미설치"
     fi
 
     test_start "Loki Operator"
-    if echo "$CSV_CACHE" | grep -qi "loki-operator"; then
+    if grep -qi "loki-operator" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "Loki Operator 설치됨"
     else
         test_blocked "Loki Operator 미설치"

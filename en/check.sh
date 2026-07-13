@@ -90,12 +90,12 @@ preflight() {
     fi
     test_pass "Connected to: $(oc whoami --show-server) as $(oc whoami)"
 
-    CSV_CACHE=$(oc get csv -A 2>/dev/null || true)
+    oc get csv -A 2>/dev/null > /tmp/_poc_csv.txt || true
 
     test_start "OpenShift Virtualization Operator"
-    if echo "$CSV_CACHE" | grep -qi "kubevirt-hyperconverged"; then
+    if grep -qi "kubevirt-hyperconverged" /tmp/_poc_csv.txt 2>/dev/null; then
         local version
-        version=$(echo "$CSV_CACHE" | grep -i "kubevirt-hyperconverged" | awk '{print $NF}' | head -1)
+        version=$(grep -i "kubevirt-hyperconverged" /tmp/_poc_csv.txt | awk '{print $NF}' | head -1)
         test_pass "OpenShift Virtualization installed (version: ${version:-unknown})"
     else
         test_fail "OpenShift Virtualization not installed"
@@ -144,7 +144,7 @@ check_network() {
     print_section "Lab 02: Network Configuration"
 
     test_start "NMState Operator"
-    if echo "$CSV_CACHE" | grep -qi "kubernetes-nmstate"; then
+    if grep -qi "kubernetes-nmstate" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "NMState Operator installed"
     else
         test_blocked "NMState Operator not installed"
@@ -216,8 +216,14 @@ check_multitenancy() {
     fi
 
     test_start "RBAC configuration"
-    local rb_count
-    rb_count=$(oc get rolebinding -n poc-multitenancy-1 -n poc-multitenancy-2 2>/dev/null | grep -E "user[1-4]" | wc -l)
+    local rb_count=0
+    for _ns in poc-multitenancy-1 poc-multitenancy-2; do
+        local _c
+        _c=$(oc get rolebindings -n "$_ns" --no-headers \
+            -o custom-columns='SUBJECT:.subjects[0].name' 2>/dev/null | \
+            grep -cE "user[1-4]" || true)
+        rb_count=$((rb_count + _c))
+    done
     if [ "$rb_count" -gt 0 ]; then
         test_pass "Multitenancy RoleBindings: $rb_count found"
     else
@@ -264,7 +270,7 @@ check_descheduler() {
     print_section "Lab 07: Descheduler"
 
     test_start "Kube Descheduler Operator"
-    if echo "$CSV_CACHE" | grep -qi "descheduler"; then
+    if grep -qi "descheduler" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "Descheduler Operator installed"
     else
         test_blocked "Descheduler Operator not installed"
@@ -327,14 +333,14 @@ check_monitoring() {
     fi
 
     test_start "Cluster Observability Operator"
-    if echo "$CSV_CACHE" | grep -qi "cluster-observability"; then
+    if grep -qi "cluster-observability" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "COO installed"
     else
         test_blocked "COO not installed"
     fi
 
     test_start "Grafana Operator"
-    if echo "$CSV_CACHE" | grep -qi "grafana-operator"; then
+    if grep -qi "grafana-operator" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "Grafana Operator installed"
     else
         test_blocked "Grafana Operator not installed"
@@ -348,7 +354,7 @@ check_mtv() {
     print_section "Lab 13: MTV (Migration)"
 
     test_start "MTV Operator"
-    if echo "$CSV_CACHE" | grep -qi "mtv-operator\|forklift"; then
+    if grep -qi "mtv-operator\|forklift" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "MTV Operator installed"
     else
         test_blocked "MTV Operator not installed"
@@ -362,7 +368,7 @@ check_oadp() {
     print_section "Lab 14: OADP (Backup/Restore)"
 
     test_start "OADP Operator"
-    if echo "$CSV_CACHE" | grep -qi "oadp"; then
+    if grep -qi "oadp" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "OADP Operator installed"
     else
         test_blocked "OADP Operator not installed"
@@ -400,28 +406,28 @@ check_node_management() {
     print_section "Lab 15-17: Node Management & Remediation"
 
     test_start "Node Maintenance Operator"
-    if echo "$CSV_CACHE" | grep -qi "node-maintenance"; then
+    if grep -qi "node-maintenance" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "Node Maintenance Operator installed"
     else
         test_blocked "Node Maintenance Operator not installed"
     fi
 
     test_start "Node Health Check Operator"
-    if echo "$CSV_CACHE" | grep -qi "node-healthcheck"; then
+    if grep -qi "node-healthcheck" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "NHC Operator installed"
     else
         test_blocked "NHC Operator not installed"
     fi
 
     test_start "Self Node Remediation Operator"
-    if echo "$CSV_CACHE" | grep -qi "self-node-remediation"; then
+    if grep -qi "self-node-remediation" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "SNR Operator installed"
     else
         test_blocked "SNR Operator not installed"
     fi
 
     test_start "Fence Agents Remediation Operator"
-    if echo "$CSV_CACHE" | grep -qi "fence-agents"; then
+    if grep -qi "fence-agents" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "FAR Operator installed"
     else
         test_blocked "FAR Operator not installed"
@@ -460,14 +466,14 @@ check_logging() {
     print_section "Lab 20: Logging"
 
     test_start "OpenShift Logging Operator"
-    if echo "$CSV_CACHE" | grep -qi "cluster-logging"; then
+    if grep -qi "cluster-logging" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "Logging Operator installed"
     else
         test_blocked "Logging Operator not installed"
     fi
 
     test_start "Loki Operator"
-    if echo "$CSV_CACHE" | grep -qi "loki-operator"; then
+    if grep -qi "loki-operator" /tmp/_poc_csv.txt 2>/dev/null; then
         test_pass "Loki Operator installed"
     else
         test_blocked "Loki Operator not installed"
