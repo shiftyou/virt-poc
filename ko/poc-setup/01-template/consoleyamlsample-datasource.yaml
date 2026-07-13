@@ -1,0 +1,21 @@
+apiVersion: console.openshift.io/v1
+kind: ConsoleYAMLSample
+metadata:
+  name: poc-datasource
+spec:
+  title: "POC DataSource Registration"
+  description: "Register a DataSource that references a Golden Image PVC. Apply after uploading the PVC with virtctl image-upload."
+  targetResource:
+    apiVersion: cdi.kubevirt.io/v1beta1
+    kind: DataSource
+  yaml: |
+    apiVersion: cdi.kubevirt.io/v1beta1
+    kind: DataSource
+    metadata:
+      name: poc
+      namespace: openshift-virtualization-os-images
+    spec:
+      source:
+        pvc:
+          name: poc-golden
+          namespace: openshift-virtualization-os-images

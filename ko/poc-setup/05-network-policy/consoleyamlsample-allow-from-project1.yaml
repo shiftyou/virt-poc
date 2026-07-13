@@ -1,0 +1,25 @@
+apiVersion: console.openshift.io/v1
+kind: ConsoleYAMLSample
+metadata:
+  name: poc-netpol-allow-from-project1
+spec:
+  title: "POC NetworkPolicy — Allow Access From Project1"
+  description: "Allows Ingress access from a specific namespace (project1)."
+  targetResource:
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+  yaml: |
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: allow-access-from-project1
+      namespace: poc-network-policy-2
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: poc-network-policy-1

@@ -521,12 +521,12 @@ print_summary() {
     [ "$total_executed" -gt 0 ] && pass_rate=$((PASSED * 100 / total_executed))
 
     echo ""
-    printf "  %-20s %3d\n" "전체 테스트:" "$TOTAL"
-    printf "  ${GREEN}%-20s %3d${NC}\n" "통과:" "$PASSED"
-    printf "  ${RED}%-20s %3d${NC}\n" "실패:" "$FAILED"
-    printf "  ${YELLOW}%-20s %3d${NC}\n" "경고:" "$WARNED"
-    printf "  ${MAGENTA}%-20s %3d${NC}\n" "불가:" "$BLOCKED"
-    printf "  ${GRAY}%-20s %3d${NC}\n" "건너뜀:" "$SKIPPED"
+    printf "  전체 테스트:  %3d\n" "$TOTAL"
+    printf "  ${GREEN}통과:         %3d${NC}\n" "$PASSED"
+    printf "  ${RED}실패:         %3d${NC}\n" "$FAILED"
+    printf "  ${YELLOW}경고:         %3d${NC}\n" "$WARNED"
+    printf "  ${MAGENTA}불가:         %3d${NC}\n" "$BLOCKED"
+    printf "  ${GRAY}건너뜀:       %3d${NC}\n" "$SKIPPED"
     echo ""
     printf "  통과율: %d%%\n" "$pass_rate"
     echo ""

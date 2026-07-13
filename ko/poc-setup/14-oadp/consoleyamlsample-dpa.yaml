@@ -1,0 +1,45 @@
+apiVersion: console.openshift.io/v1
+kind: ConsoleYAMLSample
+metadata:
+  name: poc-dataprotectionapplication
+spec:
+  title: "POC DataProtectionApplication (OADP)"
+  description: "S3 호환 Object Storage(Garage/ODF)를 백업 스토리지로 사용하는 DataProtectionApplication 예제. kubevirt, csi, openshift 플러그인 포함."
+  targetResource:
+    apiVersion: oadp.openshift.io/v1alpha1
+    kind: DataProtectionApplication
+  yaml: |
+    apiVersion: oadp.openshift.io/v1alpha1
+    kind: DataProtectionApplication
+    metadata:
+      name: poc-dpa
+      namespace: oadp-user1
+    spec:
+      configuration:
+        nodeAgent:
+          enable: true
+          uploaderType: restic
+        velero:
+          defaultPlugins:
+            - aws
+            - openshift
+            - kubevirt
+            - csi
+          disableFsBackup: false
+      logFormat: text
+      backupLocations:
+        - velero:
+            provider: aws
+            default: true
+            objectStorage:
+              bucket: velero
+              prefix: oadp
+            config:
+              profile: default
+              region: us-east-1
+              s3ForcePathStyle: "true"
+              s3Url: http://garage.garage.svc:3900
+              checksumAlgorithm: ""
+            credential:
+              key: cloud
+              name: cloud-credentials

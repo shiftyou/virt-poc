@@ -1,0 +1,33 @@
+apiVersion: console.openshift.io/v1
+kind: ConsoleYAMLSample
+metadata:
+  name: poc-servicemonitor-node-exporter
+spec:
+  title: "POC ServiceMonitor node-exporter"
+  description: "A ServiceMonitor example for registering so that Prometheus can collect node_exporter metrics from inside a VM. Automatically scrapes Services with the servicetype=metrics label."
+  targetResource:
+    apiVersion: monitoring.coreos.com/v1
+    kind: ServiceMonitor
+  yaml: |
+    apiVersion: monitoring.coreos.com/v1
+    kind: ServiceMonitor
+    metadata:
+      name: node-exporter-monitor
+      namespace: poc-node-exporter
+      labels:
+        servicetype: metrics
+    spec:
+      selector:
+        matchLabels:
+          servicetype: metrics
+      endpoints:
+        - port: metric
+          interval: 30s
+          path: /metrics
+          relabelings:
+            - targetLabel: job
+              replacement: vm_prometheus-metric
+            - sourceLabels: [__meta_kubernetes_endpoint_hostname]
+              targetLabel: vmname
+            - sourceLabels: [__address__]
+              targetLabel: instance

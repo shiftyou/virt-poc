@@ -1,0 +1,10 @@
+apiVersion: velero.io/v1
+kind: Restore
+metadata:
+  name: poc-oadp-restore
+  namespace: oadp-user1
+spec:
+  backupName: poc-oadp-backup
+  includedNamespaces:
+    - poc-oadp
+  restorePVs: true

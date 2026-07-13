@@ -1,0 +1,131 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"kubevirt.io/v1","kind":"VirtualMachine","metadata":{"annotations":{},"labels":{"app":"poc-node-exporter-vm","vm.kubevirt.io/template":"poc","vm.kubevirt.io/template.namespace":"openshift"},"name":"poc-node-exporter-vm","namespace":"poc-node-exporter"},"spec":{"dataVolumeTemplates":[{"apiVersion":"cdi.kubevirt.io/v1beta1","kind":"DataVolume","metadata":{"name":"poc-node-exporter-vm"},"spec":{"sourceRef":{"kind":"DataSource","name":"poc-golden","namespace":"openshift-virtualization-os-images"},"storage":{"resources":{"requests":{"storage":"30Gi"}}}}}],"runStrategy":"Halted","template":{"metadata":{"annotations":{"descheduler.alpha.kubernetes.io/evict":"true","vm.kubevirt.io/flavor":"small","vm.kubevirt.io/os":"rhel9","vm.kubevirt.io/workload":"server"},"labels":{"kubevirt.io/domain":"poc-node-exporter-vm","kubevirt.io/size":"small"}},"spec":{"domain":{"cpu":{"cores":1,"sockets":1,"threads":1},"devices":{"disks":[{"disk":{"bus":"virtio"},"name":"rootdisk"},{"disk":{"bus":"virtio"},"name":"cloudinitdisk"}],"interfaces":[{"masquerade":{},"model":"virtio","name":"default"}],"rng":{}},"memory":{"guest":"2Gi"}},"networks":[{"name":"default","pod":{}}],"terminationGracePeriodSeconds":180,"volumes":[{"dataVolume":{"name":"poc-node-exporter-vm"},"name":"rootdisk"},{"cloudInitNoCloud":{"userData":"#cloud-config\nuser: cloud-user\npassword: redhat\nchpasswd: { expire: False }"},"name":"cloudinitdisk"}]}}}}
+    kubemacpool.io/transaction-timestamp: "2026-07-13T13:59:34.140138889Z"
+    kubevirt.io/latest-observed-api-version: v1
+    kubevirt.io/storage-observed-api-version: v1
+  creationTimestamp: "2026-07-13T13:59:31Z"
+  finalizers:
+  - kubevirt.io/virtualMachineControllerFinalize
+  generation: 3
+  labels:
+    app: poc-node-exporter-vm
+    vm.kubevirt.io/template: poc
+    vm.kubevirt.io/template.namespace: openshift
+  name: poc-node-exporter-vm
+  namespace: poc-node-exporter
+  resourceVersion: "2252215"
+  uid: d2f99e3b-b04a-40f6-8b5f-a3b6518e58b5
+spec:
+  dataVolumeTemplates:
+  - apiVersion: cdi.kubevirt.io/v1beta1
+    kind: DataVolume
+    metadata:
+      creationTimestamp: null
+      name: poc-node-exporter-vm
+    spec:
+      sourceRef:
+        kind: DataSource
+        name: poc-golden
+        namespace: openshift-virtualization-os-images
+      storage:
+        resources:
+          requests:
+            storage: 30Gi
+  runStrategy: Always
+  template:
+    metadata:
+      annotations:
+        descheduler.alpha.kubernetes.io/evict: "true"
+        kubevirt.io/pci-topology-version: v3
+        vm.kubevirt.io/flavor: small
+        vm.kubevirt.io/os: rhel9
+        vm.kubevirt.io/workload: server
+      creationTimestamp: null
+      labels:
+        kubevirt.io/domain: poc-node-exporter-vm
+        kubevirt.io/size: small
+        monitor: metrics
+    spec:
+      architecture: amd64
+      domain:
+        cpu:
+          cores: 1
+          sockets: 1
+          threads: 1
+        devices:
+          disks:
+          - disk:
+              bus: virtio
+            name: rootdisk
+          - disk:
+              bus: virtio
+            name: cloudinitdisk
+          interfaces:
+          - macAddress: 02:34:2c:9d:a2:0f
+            masquerade: {}
+            model: virtio
+            name: default
+          rng: {}
+        firmware:
+          serial: a913c461-f1cf-41b6-8bdc-041486dc19d9
+          uuid: ccff28a8-6c3a-47a9-af70-939211bcd23c
+        machine:
+          type: pc-q35-rhel9.6.0
+        memory:
+          guest: 2Gi
+        resources: {}
+      networks:
+      - name: default
+        pod: {}
+      terminationGracePeriodSeconds: 180
+      volumes:
+      - dataVolume:
+          name: poc-node-exporter-vm
+        name: rootdisk
+      - cloudInitNoCloud:
+          userData: |-
+            #cloud-config
+            user: cloud-user
+            password: redhat
+            chpasswd: { expire: False }
+        name: cloudinitdisk
+status:
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2026-07-13T16:07:08Z"
+    status: "True"
+    type: Ready
+  - lastProbeTime: null
+    lastTransitionTime: null
+    message: All of the VMI's DVs are bound and ready
+    reason: AllDVsReady
+    status: "True"
+    type: DataVolumesReady
+  - lastProbeTime: null
+    lastTransitionTime: null
+    status: "True"
+    type: LiveMigratable
+  - lastProbeTime: null
+    lastTransitionTime: null
+    status: "True"
+    type: StorageLiveMigratable
+  - lastProbeTime: "2026-07-13T16:07:51Z"
+    lastTransitionTime: null
+    status: "True"
+    type: AgentConnected
+  created: true
+  desiredGeneration: 3
+  observedGeneration: 3
+  printableStatus: Running
+  ready: true
+  runStrategy: Always
+  volumeSnapshotStatuses:
+  - enabled: true
+    name: rootdisk
+  - enabled: false
+    name: cloudinitdisk
+    reason: Snapshot is not supported for this volumeSource type [cloudinitdisk]

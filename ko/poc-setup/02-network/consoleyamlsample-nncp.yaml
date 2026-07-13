@@ -1,0 +1,31 @@
+apiVersion: console.openshift.io/v1
+kind: ConsoleYAMLSample
+metadata:
+  name: br-flat
+spec:
+  title: "POC Linux Bridge NNCP"
+  description: "Creates a Linux Bridge (br-flat) on worker nodes."
+  targetResource:
+    apiVersion: nmstate.io/v1
+    kind: NodeNetworkConfigurationPolicy
+  yaml: |
+    apiVersion: nmstate.io/v1
+    kind: NodeNetworkConfigurationPolicy
+    metadata:
+      name: br-flat
+    spec:
+      nodeSelector:
+        node-role.kubernetes.io/worker: ""
+      desiredState:
+        interfaces:
+          - name: br-flat
+            type: linux-bridge
+            state: up
+            ipv4:
+              enabled: false
+            bridge:
+              options:
+                stp:
+                  enabled: false
+              port:
+                - name: enp3s0

@@ -1,0 +1,13 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: grafana-dashboard-ocp-v
+  namespace: poc-monitoring
+  labels:
+    app: poc-grafana
+spec:
+  resyncPeriod: 5m
+  instanceSelector:
+    matchLabels:
+      dashboards: poc-grafana
+  url: https://raw.githubusercontent.com/leoaaraujo/articles/master/openshift-virtualization-monitoring/files/ocp-v-dashboard.json

@@ -1,0 +1,62 @@
+apiVersion: console.openshift.io/v1
+kind: ConsoleYAMLSample
+metadata:
+  name: poc-prometheusrule-vm-alerts
+spec:
+  title: "POC PrometheusRule VM Alert Rules"
+  description: "A PrometheusRule example that detects major VM status anomalies such as VM stopped, Pending, Migration failure, etc. Use in environments where User-defined Project Monitoring is enabled."
+  targetResource:
+    apiVersion: monitoring.coreos.com/v1
+    kind: PrometheusRule
+  yaml: |
+    apiVersion: monitoring.coreos.com/v1
+    kind: PrometheusRule
+    metadata:
+      name: poc-vm-alerts
+      namespace: poc-alert
+      labels:
+        role: alert-rules
+    spec:
+      groups:
+        - name: poc-vm-availability
+          interval: 30s
+          rules:
+            - alert: VMStoppedByName
+              expr: |
+                (
+                  kubevirt_vm_info{name="poc-alert-vm", namespace="poc-alert"}
+                ) unless on(name, namespace) (
+                  kubevirt_vmi_info{name="poc-alert-vm", namespace="poc-alert"}
+                )
+              for: 1m
+              labels:
+                severity: critical
+              annotations:
+                summary: "Specified VM {{ $labels.name }} has stopped"
+                description: "VM {{ $labels.name }} in namespace {{ $labels.namespace }} is stopped."
+            - alert: VMStopped
+              expr: |
+                kubevirt_vmi_phase_count{phase="succeeded"} > 0
+              for: 2m
+              labels:
+                severity: critical
+              annotations:
+                summary: "VM has stopped"
+                description: "{{ $value }} VM(s) in succeeded state detected in namespace {{ $labels.namespace }}."
+            - alert: VMStuckPending
+              expr: |
+                kubevirt_vmi_phase_count{phase="pending"} > 0
+              for: 5m
+              labels:
+                severity: warning
+              annotations:
+                summary: "VM is waiting in pending state"
+                description: "{{ $value }} VM(s) in pending state exist in namespace {{ $labels.namespace }}."
+            - alert: VMLiveMigrationFailed
+              expr: |
+                increase(kubevirt_vmi_migration_phase_transition_time_seconds_count{phase="Failed"}[10m]) > 0
+              labels:
+                severity: warning
+              annotations:
+                summary: "VM Live Migration has failed"
+                description: "Live Migration of VM {{ $labels.vmi }} has failed."
