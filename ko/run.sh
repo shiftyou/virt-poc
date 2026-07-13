@@ -47,6 +47,7 @@ if [ -z "$ARG1" ]; then
     echo -e "    ${CYAN}./run.sh from 7${NC}       07번 단계부터 끝까지 실행"
     echo -e "    ${CYAN}./run.sh reset${NC}        poc- namespace + 생성된 파일 삭제"
     echo -e "    ${CYAN}./run.sh cleanup${NC}      각 단계를 역순으로 --cleanup 실행"
+    echo -e "    ${CYAN}./run.sh cleanup 7${NC}    07번 단계만 --cleanup 실행"
     echo ""
     exit 0
 fi
@@ -187,6 +188,24 @@ if [ "$ARG1" = "cleanup" ]; then
         set -a
         source "$ENV_FILE"
         set +a
+    fi
+
+    if [[ "$ARG2" =~ ^[0-9]+$ ]]; then
+        TARGET_NUM=$(printf "%02d" "$ARG2")
+        TARGET_DIR=$(find "$SCRIPT_DIR" -maxdepth 1 -type d -name "${TARGET_NUM}-*" | head -1)
+        if [ -z "$TARGET_DIR" ]; then
+            print_error "디렉토리를 찾을 수 없습니다: ${TARGET_NUM}-*"
+            exit 1
+        fi
+        dir_name=$(basename "$TARGET_DIR")
+        script="${TARGET_DIR}/${dir_name}.sh"
+        if [ ! -f "$script" ]; then
+            print_error "스크립트를 찾을 수 없습니다: ${script}"
+            exit 1
+        fi
+        print_info "--cleanup: ${dir_name}"
+        bash "$script" --cleanup || true
+        exit 0
     fi
 
     echo ""

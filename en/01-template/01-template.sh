@@ -356,11 +356,21 @@ print_summary() {
 cleanup() {
     print_step "--cleanup: Delete 01-template resources"
     oc delete template poc -n openshift --ignore-not-found 2>/dev/null || true
-#    oc delete datasource "${DV_NAME}" -n "${TARGET_NS}" --ignore-not-found 2>/dev/null || true
-#    oc delete dv "${DV_NAME}" -n "${TARGET_NS}" --ignore-not-found 2>/dev/null || true
-#    oc delete pvc "${DV_NAME}" -n "${TARGET_NS}" --ignore-not-found 2>/dev/null || true
     oc delete consoleyamlsample poc-datasource --ignore-not-found 2>/dev/null || true
-    print_ok "01-template resources deleted"
+
+    echo ""
+    echo -n -e "${YELLOW}  Delete golden image (DataSource/DataVolume/PVC)? Other labs depend on this. (y/N): ${NC}"
+    read -r confirm
+    if [[ "$confirm" =~ ^[Yy]$ ]]; then
+        oc delete datasource "${DS_NAME}" -n "${TARGET_NS}" --ignore-not-found 2>/dev/null || true
+        oc delete dv "${DV_NAME}" -n "${TARGET_NS}" --ignore-not-found 2>/dev/null || true
+        oc delete pvc "${DV_NAME}" -n "${TARGET_NS}" --ignore-not-found 2>/dev/null || true
+        print_ok "Golden image deleted"
+    else
+        print_info "Golden image kept"
+    fi
+
+    print_ok "01-template cleanup done"
 }
 
 # =============================================================================

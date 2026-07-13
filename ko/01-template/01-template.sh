@@ -356,11 +356,21 @@ print_summary() {
 cleanup() {
     print_step "--cleanup: 01-template 리소스 삭제"
     oc delete template poc -n openshift --ignore-not-found 2>/dev/null || true
-#    oc delete datasource "${DV_NAME}" -n "${TARGET_NS}" --ignore-not-found 2>/dev/null || true
-#    oc delete dv "${DV_NAME}" -n "${TARGET_NS}" --ignore-not-found 2>/dev/null || true
-#    oc delete pvc "${DV_NAME}" -n "${TARGET_NS}" --ignore-not-found 2>/dev/null || true
     oc delete consoleyamlsample poc-datasource --ignore-not-found 2>/dev/null || true
-    print_ok "01-template 리소스 삭제됨"
+
+    echo ""
+    echo -n -e "${YELLOW}  골든 이미지(DataSource/DataVolume/PVC)도 삭제하시겠습니까? 다른 Lab에서 사용 중일 수 있습니다. (y/N): ${NC}"
+    read -r confirm
+    if [[ "$confirm" =~ ^[Yy]$ ]]; then
+        oc delete datasource "${DS_NAME}" -n "${TARGET_NS}" --ignore-not-found 2>/dev/null || true
+        oc delete dv "${DV_NAME}" -n "${TARGET_NS}" --ignore-not-found 2>/dev/null || true
+        oc delete pvc "${DV_NAME}" -n "${TARGET_NS}" --ignore-not-found 2>/dev/null || true
+        print_ok "골든 이미지 삭제됨"
+    else
+        print_info "골든 이미지 유지"
+    fi
+
+    print_ok "01-template 정리 완료"
 }
 
 # =============================================================================

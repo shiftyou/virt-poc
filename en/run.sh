@@ -47,6 +47,7 @@ if [ -z "$ARG1" ]; then
     echo -e "    ${CYAN}./run.sh from 7${NC}       Run from step 07 to the end"
     echo -e "    ${CYAN}./run.sh reset${NC}        Delete poc- namespaces + generated files"
     echo -e "    ${CYAN}./run.sh cleanup${NC}      Run --cleanup for each step in reverse order"
+    echo -e "    ${CYAN}./run.sh cleanup 7${NC}    Run --cleanup for step 07 only"
     echo ""
     exit 0
 fi
@@ -187,6 +188,24 @@ if [ "$ARG1" = "cleanup" ]; then
         set -a
         source "$ENV_FILE"
         set +a
+    fi
+
+    if [[ "$ARG2" =~ ^[0-9]+$ ]]; then
+        TARGET_NUM=$(printf "%02d" "$ARG2")
+        TARGET_DIR=$(find "$SCRIPT_DIR" -maxdepth 1 -type d -name "${TARGET_NUM}-*" | head -1)
+        if [ -z "$TARGET_DIR" ]; then
+            print_error "Directory not found: ${TARGET_NUM}-*"
+            exit 1
+        fi
+        dir_name=$(basename "$TARGET_DIR")
+        script="${TARGET_DIR}/${dir_name}.sh"
+        if [ ! -f "$script" ]; then
+            print_error "Script not found: ${script}"
+            exit 1
+        fi
+        print_info "--cleanup: ${dir_name}"
+        bash "$script" --cleanup || true
+        exit 0
     fi
 
     echo ""
