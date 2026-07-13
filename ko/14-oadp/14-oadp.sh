@@ -185,6 +185,8 @@ kind: Service
 metadata:
   name: garage
   namespace: poc-garage
+  labels:
+    app: garage
 spec:
   selector:
     app: garage
