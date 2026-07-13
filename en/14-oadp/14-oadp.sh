@@ -297,8 +297,15 @@ preflight() {
         S3_ACCESS_KEY="${GARAGE_ACCESS_KEY:-}"
         S3_SECRET_KEY="${GARAGE_SECRET_KEY:-}"
         S3_REGION="${OADP_S3_REGION:-garage}"
-    elif [ -z "${GARAGE_ENDPOINT:-}" ]; then
-        # No Garage info in env.conf — try live detection
+    elif [ "${ODF_INSTALLED:-false}" = "true" ] && [ -n "${ODF_S3_ENDPOINT:-}" ]; then
+        BACKEND="odf"
+        S3_ENDPOINT="${ODF_S3_ENDPOINT}"
+        S3_BUCKET="(OBC auto-created — determined in step_obc)"
+        S3_ACCESS_KEY="${ODF_S3_ACCESS_KEY:-}"
+        S3_SECRET_KEY="${ODF_S3_SECRET_KEY:-}"
+        S3_REGION="${OADP_S3_REGION:-${ODF_S3_REGION:-us-east-1}}"
+    else
+        # No valid config in env.conf — try live detection, offer Garage install
         auto_detect_garage
         if [ "${GARAGE_FOUND}" != "true" ]; then
             if install_garage; then
@@ -339,21 +346,6 @@ preflight() {
             S3_REGION="${OADP_S3_REGION:-us-east-1}"
             print_warn "Object Storage auto-detection failed — please enter values below."
         fi
-    elif [ "${ODF_INSTALLED:-false}" = "true" ] && [ -n "${ODF_S3_ENDPOINT:-}" ]; then
-        BACKEND="odf"
-        S3_ENDPOINT="${ODF_S3_ENDPOINT}"
-        S3_BUCKET="(OBC auto-created — determined in step_obc)"
-        S3_ACCESS_KEY="${ODF_S3_ACCESS_KEY:-}"
-        S3_SECRET_KEY="${ODF_S3_SECRET_KEY:-}"
-        S3_REGION="${OADP_S3_REGION:-${ODF_S3_REGION:-us-east-1}}"
-    else
-        BACKEND="custom"
-        S3_ENDPOINT="${OADP_S3_ENDPOINT:-}"
-        S3_BUCKET="${OADP_S3_BUCKET:-velero}"
-        S3_ACCESS_KEY="${OADP_S3_ACCESS_KEY:-}"
-        S3_SECRET_KEY="${OADP_S3_SECRET_KEY:-}"
-        S3_REGION="${OADP_S3_REGION:-us-east-1}"
-        print_warn "Object Storage auto-detection failed — please enter values below."
     fi
 
     echo ""
@@ -570,8 +562,11 @@ step_dpa() {
         oc patch dpa "${_existing_dpa}" -n "$NS" --type=json -p="[
           {\"op\":\"replace\",\"path\":\"/spec/backupLocations/0/velero/objectStorage/bucket\",\"value\":\"${S3_BUCKET}\"},
           {\"op\":\"replace\",\"path\":\"/spec/backupLocations/0/velero/config/s3Url\",\"value\":\"${S3_ENDPOINT}\"},
-          {\"op\":\"replace\",\"path\":\"/spec/backupLocations/0/velero/config/region\",\"value\":\"${S3_REGION}\"}
-        ]" 2>/dev/null && print_ok "DPA bucket/endpoint/region updated successfully" || \
+          {\"op\":\"replace\",\"path\":\"/spec/backupLocations/0/velero/config/region\",\"value\":\"${S3_REGION}\"},
+          {\"op\":\"add\",\"path\":\"/spec/backupLocations/0/velero/config/s3ForcePathStyle\",\"value\":\"true\"},
+          {\"op\":\"add\",\"path\":\"/spec/backupLocations/0/velero/config/checksumAlgorithm\",\"value\":\"\"},
+          {\"op\":\"add\",\"path\":\"/spec/backupLocations/0/velero/credential\",\"value\":{\"key\":\"cloud\",\"name\":\"cloud-credentials\"}}
+        ]" 2>/dev/null && print_ok "DPA updated successfully (bucket/endpoint/region/credentials)" || \
             print_warn "DPA patch failed — manual check required: oc edit dpa ${_existing_dpa} -n ${NS}"
         return
     fi

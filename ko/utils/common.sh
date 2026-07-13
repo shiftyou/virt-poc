@@ -139,12 +139,12 @@ load_or_ask() {
 confirm_and_apply() {
     local file="$1"
     local auto="${2:-true}"
-    echo ""
-    print_info "적용할 YAML:"
-    echo "────────────────────────────────────────"
-    cat "$file"
-    echo "────────────────────────────────────────"
     if [ "$auto" != "true" ]; then
+        echo ""
+        print_info "적용할 YAML:"
+        echo "────────────────────────────────────────"
+        cat "$file"
+        echo "────────────────────────────────────────"
         read -r -p "위 YAML을 클러스터에 적용하시겠습니까? [y/N]: " confirm
         [[ "$confirm" != "y" && "$confirm" != "Y" ]] && { print_warn "취소됨."; return 1; }
     fi

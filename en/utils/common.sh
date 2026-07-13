@@ -139,12 +139,12 @@ load_or_ask() {
 confirm_and_apply() {
     local file="$1"
     local auto="${2:-true}"
-    echo ""
-    print_info "YAML to apply:"
-    echo "────────────────────────────────────────"
-    cat "$file"
-    echo "────────────────────────────────────────"
     if [ "$auto" != "true" ]; then
+        echo ""
+        print_info "YAML to apply:"
+        echo "────────────────────────────────────────"
+        cat "$file"
+        echo "────────────────────────────────────────"
         read -r -p "Apply the above YAML to the cluster? [y/N]: " confirm
         [[ "$confirm" != "y" && "$confirm" != "Y" ]] && { print_warn "Cancelled."; return 1; }
     fi

@@ -297,8 +297,15 @@ preflight() {
         S3_ACCESS_KEY="${GARAGE_ACCESS_KEY:-}"
         S3_SECRET_KEY="${GARAGE_SECRET_KEY:-}"
         S3_REGION="${OADP_S3_REGION:-garage}"
-    elif [ -z "${GARAGE_ENDPOINT:-}" ]; then
-        # env.conf에 Garage 정보 없음 — 라이브 감지 시도
+    elif [ "${ODF_INSTALLED:-false}" = "true" ] && [ -n "${ODF_S3_ENDPOINT:-}" ]; then
+        BACKEND="odf"
+        S3_ENDPOINT="${ODF_S3_ENDPOINT}"
+        S3_BUCKET="(OBC 자동 생성 — step_obc에서 결정)"
+        S3_ACCESS_KEY="${ODF_S3_ACCESS_KEY:-}"
+        S3_SECRET_KEY="${ODF_S3_SECRET_KEY:-}"
+        S3_REGION="${OADP_S3_REGION:-${ODF_S3_REGION:-us-east-1}}"
+    else
+        # env.conf에 유효한 설정 없음 — 라이브 감지 시도, Garage 설치 제안
         auto_detect_garage
         if [ "${GARAGE_FOUND}" != "true" ]; then
             if install_garage; then
@@ -339,21 +346,6 @@ preflight() {
             S3_REGION="${OADP_S3_REGION:-us-east-1}"
             print_warn "Object Storage 자동 감지 실패 — 아래에 값을 입력하세요."
         fi
-    elif [ "${ODF_INSTALLED:-false}" = "true" ] && [ -n "${ODF_S3_ENDPOINT:-}" ]; then
-        BACKEND="odf"
-        S3_ENDPOINT="${ODF_S3_ENDPOINT}"
-        S3_BUCKET="(OBC 자동 생성 — step_obc에서 결정)"
-        S3_ACCESS_KEY="${ODF_S3_ACCESS_KEY:-}"
-        S3_SECRET_KEY="${ODF_S3_SECRET_KEY:-}"
-        S3_REGION="${OADP_S3_REGION:-${ODF_S3_REGION:-us-east-1}}"
-    else
-        BACKEND="custom"
-        S3_ENDPOINT="${OADP_S3_ENDPOINT:-}"
-        S3_BUCKET="${OADP_S3_BUCKET:-velero}"
-        S3_ACCESS_KEY="${OADP_S3_ACCESS_KEY:-}"
-        S3_SECRET_KEY="${OADP_S3_SECRET_KEY:-}"
-        S3_REGION="${OADP_S3_REGION:-us-east-1}"
-        print_warn "Object Storage 자동 감지 실패 — 아래에 값을 입력하세요."
     fi
 
     echo ""
@@ -570,8 +562,11 @@ step_dpa() {
         oc patch dpa "${_existing_dpa}" -n "$NS" --type=json -p="[
           {\"op\":\"replace\",\"path\":\"/spec/backupLocations/0/velero/objectStorage/bucket\",\"value\":\"${S3_BUCKET}\"},
           {\"op\":\"replace\",\"path\":\"/spec/backupLocations/0/velero/config/s3Url\",\"value\":\"${S3_ENDPOINT}\"},
-          {\"op\":\"replace\",\"path\":\"/spec/backupLocations/0/velero/config/region\",\"value\":\"${S3_REGION}\"}
-        ]" 2>/dev/null && print_ok "DPA 버킷/엔드포인트/리전 업데이트 성공" || \
+          {\"op\":\"replace\",\"path\":\"/spec/backupLocations/0/velero/config/region\",\"value\":\"${S3_REGION}\"},
+          {\"op\":\"add\",\"path\":\"/spec/backupLocations/0/velero/config/s3ForcePathStyle\",\"value\":\"true\"},
+          {\"op\":\"add\",\"path\":\"/spec/backupLocations/0/velero/config/checksumAlgorithm\",\"value\":\"\"},
+          {\"op\":\"add\",\"path\":\"/spec/backupLocations/0/velero/credential\",\"value\":{\"key\":\"cloud\",\"name\":\"cloud-credentials\"}}
+        ]" 2>/dev/null && print_ok "DPA 업데이트 성공 (버킷/엔드포인트/리전/자격증명)" || \
             print_warn "DPA 패치 실패 — 수동 확인 필요: oc edit dpa ${_existing_dpa} -n ${NS}"
         return
     fi
