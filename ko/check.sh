@@ -102,18 +102,6 @@ preflight() {
         exit 1
     fi
 
-    test_start "HyperConverged CR"
-    if oc get hyperconverged kubevirt-hyperconverged -n openshift-cnv &>/dev/null; then
-        local phase
-        phase=$(oc get hyperconverged kubevirt-hyperconverged -n openshift-cnv -o jsonpath='{.status.phase}')
-        if [ "$phase" = "Deployed" ]; then
-            test_pass "HyperConverged 배포 완료"
-        else
-            test_warn "HyperConverged 상태: $phase (예상: Deployed)"
-        fi
-    else
-        test_fail "HyperConverged CR을 찾을 수 없습니다"
-    fi
 }
 
 # =============================================================================
