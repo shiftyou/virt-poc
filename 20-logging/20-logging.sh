@@ -42,31 +42,7 @@ HAS_LOGGING=false
 HAS_LOKI=false
 LOGGING_V6=false
 
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-RED='\033[0;31m'
-NC='\033[0m'
-
-print_info()  { echo -e "${BLUE}[INFO]${NC} $1"; }
-print_ok()    { echo -e "${GREEN}[ OK ]${NC} $1"; }
-print_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
-print_error() { echo -e "${RED}[ERR ]${NC} $1"; }
-print_step()  { echo -e "\n${CYAN}━━━ $1 ━━━${NC}"; }
-
-# Preview YAML and apply after confirmation
-confirm_and_apply() {
-    local file="$1"
-    echo ""
-    print_info "YAML to apply:"
-    echo "────────────────────────────────────────"
-    cat "$file"
-    echo "────────────────────────────────────────"
-    read -r -p "Apply the above YAML to the cluster? [y/N]: " confirm
-    [[ "$confirm" != "y" && "$confirm" != "Y" ]] && { print_warn "Cancelled."; exit 0; }
-    oc apply -f "$file"
-}
+source "${SCRIPT_DIR}/../utils/common.sh"
 
 # =============================================================================
 # Select Audit Policy profile
@@ -136,7 +112,7 @@ preflight() {
         HAS_LOKI=true
         print_ok "Loki Operator confirmed"
 
-        # Determine S3 initial values: Garage first, then ODF, then empty (manual input)
+        # Determine S3 initial values: env.conf Garage → env.conf ODF → live detect → manual
         if [ -n "${GARAGE_ENDPOINT:-}" ]; then
             S3_ENDPOINT="${GARAGE_ENDPOINT}"
             S3_BUCKET="${LOGGING_S3_BUCKET:-${GARAGE_BUCKET:-loki}}"
@@ -149,13 +125,45 @@ preflight() {
             S3_ACCESS_KEY="${ODF_S3_ACCESS_KEY:-}"
             S3_SECRET_KEY="${ODF_S3_SECRET_KEY:-}"
             S3_REGION="${LOGGING_S3_REGION:-${ODF_S3_REGION:-us-east-1}}"
-        else
-            S3_ENDPOINT="${LOGGING_S3_ENDPOINT:-}"
+        elif [ -n "${LOGGING_S3_ENDPOINT:-}" ]; then
+            S3_ENDPOINT="${LOGGING_S3_ENDPOINT}"
             S3_BUCKET="${LOGGING_S3_BUCKET:-loki}"
             S3_ACCESS_KEY="${LOGGING_S3_ACCESS_KEY:-}"
             S3_SECRET_KEY="${LOGGING_S3_SECRET_KEY:-}"
             S3_REGION="${LOGGING_S3_REGION:-us-east-1}"
-            print_warn "Object Storage auto-detection failed — please enter manually below."
+        else
+            # No S3 info in env.conf — try live detection
+            auto_detect_garage
+            if [ "${GARAGE_FOUND}" = "true" ]; then
+                S3_ENDPOINT="${GARAGE_ENDPOINT}"
+                S3_BUCKET="${LOGGING_S3_BUCKET:-loki}"
+                S3_ACCESS_KEY="${GARAGE_ACCESS_KEY:-}"
+                S3_SECRET_KEY="${GARAGE_SECRET_KEY:-}"
+                S3_REGION="${LOGGING_S3_REGION:-garage}"
+            elif [ "${ODF_INSTALLED:-false}" = "true" ]; then
+                auto_detect_odf
+                if [ -n "${ODF_S3_ACCESS_KEY:-}" ]; then
+                    S3_ENDPOINT="${ODF_S3_ENDPOINT}"
+                    S3_BUCKET="(OBC auto-generated — determined in step_loki_obc)"
+                    S3_ACCESS_KEY="${ODF_S3_ACCESS_KEY:-}"
+                    S3_SECRET_KEY="${ODF_S3_SECRET_KEY:-}"
+                    S3_REGION="${LOGGING_S3_REGION:-${ODF_S3_REGION:-us-east-1}}"
+                else
+                    S3_ENDPOINT=""
+                    S3_BUCKET="${LOGGING_S3_BUCKET:-loki}"
+                    S3_ACCESS_KEY=""
+                    S3_SECRET_KEY=""
+                    S3_REGION="${LOGGING_S3_REGION:-us-east-1}"
+                    print_warn "Object Storage auto-detection failed — please enter manually below."
+                fi
+            else
+                S3_ENDPOINT=""
+                S3_BUCKET="${LOGGING_S3_BUCKET:-loki}"
+                S3_ACCESS_KEY=""
+                S3_SECRET_KEY=""
+                S3_REGION="${LOGGING_S3_REGION:-us-east-1}"
+                print_warn "Object Storage auto-detection failed — please enter manually below."
+            fi
         fi
 
         # Check and re-enter Object Storage info
@@ -182,6 +190,13 @@ preflight() {
             [ -n "$_input" ] && S3_SECRET_KEY="$_input"
         fi
         print_ok "Object Storage configuration confirmed (bucket: ${S3_BUCKET})"
+
+        # Save Logging S3 configuration to env.conf
+        save_to_env "LOGGING_S3_ENDPOINT" "${S3_ENDPOINT}"
+        save_to_env "LOGGING_S3_BUCKET" "${S3_BUCKET}"
+        save_to_env "LOGGING_S3_ACCESS_KEY" "${S3_ACCESS_KEY}"
+        save_to_env "LOGGING_S3_SECRET_KEY" "${S3_SECRET_KEY}"
+        save_to_env "LOGGING_S3_REGION" "${S3_REGION}"
     else
         HAS_LOKI=false
         print_warn "Loki Operator not installed → skipping LokiStack creation."
@@ -224,7 +239,7 @@ spec:
     profile: ${AUDIT_PROFILE}
 EOF
 
-    confirm_and_apply ./audit-policy.yaml
+    confirm_and_apply ./audit-policy.yaml false
     print_ok "Audit Policy applied successfully"
     print_info "kube-apiserver rollout may take several minutes."
     print_info "  Check: oc get co kube-apiserver"
@@ -295,7 +310,7 @@ ${log_store_block}
     type: vector
 EOF
 
-    confirm_and_apply ./cluster-logging.yaml
+    confirm_and_apply ./cluster-logging.yaml false
     print_ok "ClusterLogging '${CL_NAME}' created successfully"
 }
 
@@ -419,7 +434,7 @@ spec:
     mode: openshift-logging
 EOF
 
-    confirm_and_apply ./loki-stack.yaml
+    confirm_and_apply ./loki-stack.yaml false
 
     # Reduce resources for POC environment (LokiStack CRD does not support resource override → patch StatefulSet directly)
     # Default 1x.small: ingester cpu=4/mem=20Gi → causes Pending due to insufficient CPU on worker nodes
@@ -578,7 +593,7 @@ ${output_section}
 EOF
     fi
 
-    confirm_and_apply ./cluster-log-forwarder.yaml
+    confirm_and_apply ./cluster-log-forwarder.yaml false
     print_ok "ClusterLogForwarder '${CLF_NAME}' applied successfully"
 }
 

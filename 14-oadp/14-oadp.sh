@@ -43,29 +43,7 @@ S3_REGION=""
 DPA_NAME="poc-dpa"
 BSL_NAME="poc-dpa-1"
 
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-RED='\033[0;31m'
-NC='\033[0m'
-
-print_info()  { echo -e "${BLUE}[INFO]${NC} $1"; }
-print_ok()    { echo -e "${GREEN}[ OK ]${NC} $1"; }
-print_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
-print_error() { echo -e "${RED}[ERR ]${NC} $1"; }
-print_step()  { echo -e "\n${CYAN}━━━ $1 ━━━${NC}"; }
-
-# Preview YAML then apply
-confirm_and_apply() {
-    local file="$1"
-    echo ""
-    print_info "YAML to apply:"
-    echo "────────────────────────────────────────"
-    cat "$file"
-    echo "────────────────────────────────────────"
-    oc apply -f "$file"
-}
+source "${SCRIPT_DIR}/../utils/common.sh"
 
 preflight() {
     print_step "Pre-flight check"
@@ -85,6 +63,7 @@ preflight() {
     print_ok "OADP Operator confirmed (ns: ${NS})"
 
     # Determine initial S3 values: Garage preferred, then ODF, then empty (manual input)
+    # If env.conf doesn't have S3 info, auto-detect from cluster
     if [ "${GARAGE_INSTALLED:-false}" = "true" ] && [ -n "${GARAGE_ENDPOINT:-}" ]; then
         BACKEND="garage"
         S3_ENDPOINT="${GARAGE_ENDPOINT}"
@@ -92,6 +71,43 @@ preflight() {
         S3_ACCESS_KEY="${GARAGE_ACCESS_KEY:-}"
         S3_SECRET_KEY="${GARAGE_SECRET_KEY:-}"
         S3_REGION="${OADP_S3_REGION:-garage}"
+    elif [ -z "${GARAGE_ENDPOINT:-}" ]; then
+        # No Garage info in env.conf — try live detection
+        auto_detect_garage
+        if [ "${GARAGE_FOUND}" = "true" ]; then
+            BACKEND="garage"
+            S3_ENDPOINT="${GARAGE_ENDPOINT}"
+            S3_BUCKET="${OADP_S3_BUCKET:-${GARAGE_BUCKET:-velero}}"
+            S3_ACCESS_KEY="${GARAGE_ACCESS_KEY:-}"
+            S3_SECRET_KEY="${GARAGE_SECRET_KEY:-}"
+            S3_REGION="${OADP_S3_REGION:-garage}"
+        elif [ "${ODF_INSTALLED:-false}" = "true" ]; then
+            auto_detect_odf
+            if [ -n "${ODF_S3_ACCESS_KEY:-}" ]; then
+                BACKEND="odf"
+                S3_ENDPOINT="${ODF_S3_ENDPOINT}"
+                S3_BUCKET="(OBC auto-created — determined in step_obc)"
+                S3_ACCESS_KEY="${ODF_S3_ACCESS_KEY:-}"
+                S3_SECRET_KEY="${ODF_S3_SECRET_KEY:-}"
+                S3_REGION="${OADP_S3_REGION:-${ODF_S3_REGION:-us-east-1}}"
+            else
+                BACKEND="custom"
+                S3_ENDPOINT="${OADP_S3_ENDPOINT:-}"
+                S3_BUCKET="${OADP_S3_BUCKET:-velero}"
+                S3_ACCESS_KEY="${OADP_S3_ACCESS_KEY:-}"
+                S3_SECRET_KEY="${OADP_S3_SECRET_KEY:-}"
+                S3_REGION="${OADP_S3_REGION:-us-east-1}"
+                print_warn "Object Storage auto-detection failed — please enter values below."
+            fi
+        else
+            BACKEND="custom"
+            S3_ENDPOINT="${OADP_S3_ENDPOINT:-}"
+            S3_BUCKET="${OADP_S3_BUCKET:-velero}"
+            S3_ACCESS_KEY="${OADP_S3_ACCESS_KEY:-}"
+            S3_SECRET_KEY="${OADP_S3_SECRET_KEY:-}"
+            S3_REGION="${OADP_S3_REGION:-us-east-1}"
+            print_warn "Object Storage auto-detection failed — please enter values below."
+        fi
     elif [ "${ODF_INSTALLED:-false}" = "true" ] && [ -n "${ODF_S3_ENDPOINT:-}" ]; then
         BACKEND="odf"
         S3_ENDPOINT="${ODF_S3_ENDPOINT}"
@@ -138,6 +154,19 @@ preflight() {
         exit 1
     fi
     print_ok "Object Storage configuration confirmed (backend: ${BACKEND}, bucket: ${S3_BUCKET})"
+
+    # Save S3 configuration to env.conf for reuse by other labs (e.g., 20-logging)
+    save_to_env "GARAGE_INSTALLED" "${GARAGE_FOUND:-false}"
+    save_to_env "GARAGE_ENDPOINT" "${GARAGE_ENDPOINT:-${S3_ENDPOINT}}"
+    save_to_env "GARAGE_BUCKET" "${GARAGE_BUCKET:-${S3_BUCKET}}"
+    save_to_env "GARAGE_ACCESS_KEY" "${GARAGE_ACCESS_KEY:-${S3_ACCESS_KEY}}"
+    save_to_env "GARAGE_SECRET_KEY" "${GARAGE_SECRET_KEY:-${S3_SECRET_KEY}}"
+    save_to_env "ODF_S3_ENDPOINT" "${ODF_S3_ENDPOINT:-}"
+    save_to_env "ODF_S3_ACCESS_KEY" "${ODF_S3_ACCESS_KEY:-}"
+    save_to_env "ODF_S3_SECRET_KEY" "${ODF_S3_SECRET_KEY:-}"
+    save_to_env "ODF_S3_REGION" "${ODF_S3_REGION:-us-east-1}"
+    save_to_env "OADP_S3_BUCKET" "${S3_BUCKET}"
+    save_to_env "OADP_S3_REGION" "${S3_REGION}"
 }
 
 # =============================================================================

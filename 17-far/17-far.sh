@@ -20,34 +20,10 @@ if [ -f "$ENV_FILE" ]; then
     set -a; source "$ENV_FILE"; set +a
 fi
 
+source "${SCRIPT_DIR}/../utils/common.sh"
+
 NS="poc-far"
 REMEDIATION_NS="openshift-workload-availability"
-NODE1="${TEST_NODE}"
-FENCE_AGENT_IP="${FENCE_AGENT_IPS%% *}"
-
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-RED='\033[0;31m'
-NC='\033[0m'
-
-print_info()  { echo -e "${BLUE}[INFO]${NC} $1"; }
-print_ok()    { echo -e "${GREEN}[ OK ]${NC} $1"; }
-print_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
-print_error() { echo -e "${RED}[ERR ]${NC} $1"; }
-print_step()  { echo -e "\n${CYAN}━━━ $1 ━━━${NC}"; }
-
-# Preview YAML then apply
-confirm_and_apply() {
-    local file="$1"
-    echo ""
-    print_info "YAML to apply:"
-    echo "────────────────────────────────────────"
-    cat "$file"
-    echo "────────────────────────────────────────"
-    oc apply -f "$file"
-}
 
 # =============================================================================
 # Pre-flight check
@@ -75,6 +51,29 @@ preflight() {
     fi
     print_ok "Node Health Check Operator confirmed"
 
+    # Collect IPMI credentials if not already in env.conf
+    load_or_ask FENCE_AGENT_USER "IPMI username" "admin"
+    load_or_ask FENCE_AGENT_PASS "IPMI password" "password" "true"
+
+    if [ -z "${FENCE_AGENT_IPS:-}" ]; then
+        echo ""
+        print_info "Enter the IPMI/BMC IP address for each worker node."
+        FENCE_AGENT_IPS=""
+        local _ipmi_idx=1
+        for _node in ${WORKER_NODES}; do
+            ask "  ${_node} IPMI/BMC IP" "192.168.1.${_ipmi_idx}" _node_ipmi_ip
+            FENCE_AGENT_IPS="${FENCE_AGENT_IPS:+${FENCE_AGENT_IPS} }${_node_ipmi_ip}"
+            _ipmi_idx=$((_ipmi_idx + 1))
+        done
+        print_ok "IPMI IP list: ${FENCE_AGENT_IPS}"
+        save_to_env "FENCE_AGENT_IPS" "\"${FENCE_AGENT_IPS}\""
+        save_to_env "FENCE_AGENT_USER" "${FENCE_AGENT_USER}"
+        save_to_env "FENCE_AGENT_PASS" "${FENCE_AGENT_PASS}"
+    fi
+
+    NODE1="${TEST_NODE}"
+    FENCE_AGENT_IP="${FENCE_AGENT_IPS%% *}"
+
     if ! oc get node "$NODE1" &>/dev/null; then
         print_error "Node $NODE1 not found. Please check TEST_NODE in env.conf."
         exit 1
@@ -82,7 +81,7 @@ preflight() {
     print_ok "Target node: $NODE1"
 
     if [ -z "${FENCE_AGENT_IP:-}" ] || [ "${FENCE_AGENT_IP}" = "192.168.1.100" ]; then
-        print_warn "FENCE_AGENT_IP is the default value. Please update FENCE_AGENT_IP in env.conf with the actual BMC IP."
+        print_warn "FENCE_AGENT_IP is the default value. Please update FENCE_AGENT_IPS in env.conf with the actual BMC IP."
     else
         print_ok "FENCE_AGENT_IP: ${FENCE_AGENT_IP}"
     fi

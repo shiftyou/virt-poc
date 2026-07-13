@@ -21,20 +21,11 @@ if [ -f "$ENV_FILE" ]; then
     set -a; source "$ENV_FILE"; set +a
 fi
 
+source "${SCRIPT_DIR}/../utils/common.sh"
+
 NS="poc-monitoring"
 
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-RED='\033[0;31m'
-NC='\033[0m'
-
-print_info()  { echo -e "${BLUE}[INFO]${NC} $1"; }
-print_ok()    { echo -e "${GREEN}[ OK ]${NC} $1"; }
-print_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
-print_error() { echo -e "${RED}[ERR ]${NC} $1"; }
-print_step()  { echo -e "\n${CYAN}━━━ $1 ━━━${NC}"; }
+load_or_ask GRAFANA_ADMIN_PASS "Grafana admin password" "grafana123" "true"
 
 step_install_grafana_guide() {
     echo ""

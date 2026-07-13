@@ -33,18 +33,7 @@ SECONDARY_IP_PREFIX="${SECONDARY_IP_PREFIX:-192.168.100}"
 NET_TYPE=""
 NAD_NAME=""
 
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-RED='\033[0;31m'
-NC='\033[0m'
-
-print_info()  { echo -e "${BLUE}[INFO]${NC} $1"; }
-print_ok()    { echo -e "${GREEN}[ OK ]${NC} $1"; }
-print_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
-print_error() { echo -e "${RED}[ERR ]${NC} $1"; }
-print_step()  { echo -e "\n${CYAN}━━━ $1 ━━━${NC}"; }
+source "${SCRIPT_DIR}/../utils/common.sh"
 
 ensure_runstrategy() {
     local vm="$1" ns="$2"

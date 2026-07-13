@@ -22,19 +22,9 @@ if [ -f "$ENV_FILE" ]; then
     set -a; source "$ENV_FILE"; set +a
 fi
 
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-RED='\033[0;31m'
-NC='\033[0m'
+source "${SCRIPT_DIR}/../utils/common.sh"
 
-print_step()  { echo -e "\n${CYAN}━━━ $1 ━━━${NC}"; }
-print_ok()    { echo -e "  ${GREEN}✔ $1${NC}"; }
-print_warn()  { echo -e "  ${YELLOW}⚠ $1${NC}"; }
-print_info()  { echo -e "  ${BLUE}ℹ $1${NC}"; }
-print_error() { echo -e "  ${RED}✘ $1${NC}"; }
-print_cmd()   { echo -e "  ${CYAN}$ $1${NC}"; }
+print_cmd() { echo -e "  ${DIM}\$ $1${NC}"; }
 
 # =============================================================================
 # Configuration
