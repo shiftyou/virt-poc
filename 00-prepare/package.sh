@@ -2,11 +2,11 @@
 # =============================================================================
 # package.sh
 #
-# 다운로드된 파일과 함께 전체 virt-poc를 폐쇄망 전송용으로 패키징
+# Package entire virt-poc with downloaded files for air-gapped transfer
 #
-# 생성물: virt-poc-<날짜>.tar.gz
+# Creates: virt-poc-<date>.tar.gz
 #
-# 사용법: ./package.sh
+# Usage: ./package.sh
 # =============================================================================
 
 set -euo pipefail
@@ -16,35 +16,46 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PACKAGE_NAME="virt-poc-$(date +%Y%m%d-%H%M%S)"
 TEMP_DIR="/tmp/${PACKAGE_NAME}"
 
-source "${SCRIPT_DIR}/../utils/common.sh"
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+print_info()  { echo -e "${BLUE}[INFO]${NC} $1"; }
+print_ok()    { echo -e "${GREEN}[ OK ]${NC} $1"; }
+print_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
+print_error() { echo -e "${RED}[ERR ]${NC} $1"; }
+print_step()  { echo -e "\n${CYAN}━━━ $1 ━━━${NC}"; }
 
 # =============================================================================
-# 사전 점검
+# Preflight checks
 # =============================================================================
 preflight() {
-    print_step "사전 점검"
+    print_step "Pre-flight checks"
 
     if [ ! -d "${SCRIPT_DIR}/downloads" ]; then
-        print_error "downloads 디렉토리를 찾을 수 없습니다."
-        print_error "먼저 ./download.sh를 실행해 주세요."
+        print_error "downloads directory not found."
+        print_error "Please run ./download.sh first."
         exit 1
     fi
 
-    print_ok "downloads 디렉토리 확인됨"
+    print_ok "Downloads directory found"
 }
 
 # =============================================================================
-# 프로젝트 파일 복사
+# Copy project files
 # =============================================================================
 copy_project() {
-    print_step "1/4  프로젝트 파일 복사"
+    print_step "1/4  Copy project files"
 
     rm -rf "$TEMP_DIR"
     mkdir -p "$TEMP_DIR"
 
-    print_info "프로젝트 파일 복사 중: ${TEMP_DIR}"
+    print_info "Copying project files to: ${TEMP_DIR}"
 
-    # .git 및 임시 파일을 제외하고 모든 프로젝트 파일 복사
+    # Copy all project files excluding .git and temporary files
     rsync -av \
         --exclude='.git' \
         --exclude='.gitignore' \
@@ -55,21 +66,21 @@ copy_project() {
         --exclude='__pycache__' \
         "${PROJECT_ROOT}/" "${TEMP_DIR}/"
 
-    print_ok "프로젝트 파일 복사 완료"
+    print_ok "Project files copied"
 }
 
 # =============================================================================
-# 설치 스크립트 생성
+# Create installation script
 # =============================================================================
 create_install_script() {
-    print_step "2/4  설치 스크립트 생성"
+    print_step "2/4  Create installation script"
 
     cat > "${TEMP_DIR}/00-prepare/install.sh" <<'INSTALL_EOF'
 #!/bin/bash
 # =============================================================================
 # install.sh
 #
-# OpenShift Virtualization POC 폐쇄망 설치 스크립트
+# Air-gapped installation script for OpenShift Virtualization POC
 # =============================================================================
 
 set -euo pipefail
@@ -92,128 +103,131 @@ print_error() { echo -e "${RED}[ERR ]${NC} $1"; }
 print_step()  { echo -e "\n${CYAN}━━━ $1 ━━━${NC}"; }
 
 # =============================================================================
-# 사전 점검
+# Preflight checks
 # =============================================================================
 preflight() {
-    print_step "사전 점검"
+    print_step "Pre-flight checks"
 
     if ! oc whoami &>/dev/null; then
-        print_error "OpenShift 클러스터에 로그인되어 있지 않습니다."
-        print_error "먼저 로그인해 주세요: oc login <cluster-api>"
+        print_error "Not logged in to OpenShift cluster."
+        print_error "Please login first: oc login <cluster-api>"
         exit 1
     fi
-    print_ok "클러스터 연결: $(oc whoami --show-server)"
+    print_ok "Connected to cluster: $(oc whoami --show-server)"
 
     if ! command -v podman &>/dev/null; then
-        print_error "podman 명령어를 찾을 수 없습니다."
-        print_error "podman을 설치해 주세요."
+        print_error "podman command not found."
+        print_error "Please install podman."
         exit 1
     fi
-    print_ok "podman 사용 가능"
+    print_ok "podman available"
 }
 
 # =============================================================================
-# Garage 컨테이너 이미지 로드
+# Load Garage container image
 # =============================================================================
 load_garage_image() {
-    print_step "1/3  Garage 컨테이너 이미지 로드"
+    print_step "1/3  Load Garage container image"
 
     local garage_tar
     garage_tar=$(ls -t "${DOWNLOAD_DIR}/containers/garage-"*.tar 2>/dev/null | head -1 || true)
 
     if [ -z "$garage_tar" ]; then
-        print_warn "downloads에서 Garage 컨테이너 이미지를 찾을 수 없습니다"
-        print_warn "수동으로 pull하거나 레지스트리에 미러링해야 합니다"
+        print_warn "Garage container image not found in downloads"
+        print_warn "You'll need to pull it manually or mirror to your registry"
         return
     fi
 
-    print_info "Garage 이미지 로드 중: ${garage_tar}"
+    print_info "Loading Garage image from: ${garage_tar}"
     podman load -i "$garage_tar"
-    print_ok "Garage 이미지가 로컬 podman에 로드됨"
+    print_ok "Garage image loaded into local podman"
 
     echo ""
-    print_info "레지스트리에 push하려면:"
+    print_info "To push to your registry:"
     echo "  podman tag <image-id> <your-registry>/garage:v1.0.1"
     echo "  podman push <your-registry>/garage:v1.0.1"
 }
 
 # =============================================================================
-# 바이너리 복사
+# Copy binaries
 # =============================================================================
 copy_binaries() {
-    print_step "2/3  프로젝트에 바이너리 복사"
+    print_step "2/3  Copy binaries to project"
 
-    # node_exporter 복사
+    # Copy node_exporter
     local node_exporter_tar
     node_exporter_tar=$(ls -t "${DOWNLOAD_DIR}/binaries/node_exporter-"*.tar.gz 2>/dev/null | head -1 || true)
     if [ -n "$node_exporter_tar" ]; then
-        cp "$node_exporter_tar" "${PROJECT_ROOT}/10-node-exporter/"
-        print_ok "node_exporter가 10-node-exporter/에 복사됨"
+        cp "$node_exporter_tar" "${PROJECT_ROOT}/en/10-node-exporter/" 2>/dev/null || true
+        cp "$node_exporter_tar" "${PROJECT_ROOT}/ko/10-node-exporter/" 2>/dev/null || true
+        print_ok "node_exporter copied to en/10-node-exporter/ and ko/10-node-exporter/"
     fi
 
-    # mc 클라이언트 복사
+    # Copy mc client
     if [ -f "${DOWNLOAD_DIR}/binaries/mc" ]; then
-        cp "${DOWNLOAD_DIR}/binaries/mc" "${PROJECT_ROOT}/14-oadp/"
-        chmod +x "${PROJECT_ROOT}/14-oadp/mc"
-        print_ok "mc 클라이언트가 14-oadp/에 복사됨"
+        cp "${DOWNLOAD_DIR}/binaries/mc" "${PROJECT_ROOT}/en/14-oadp/" 2>/dev/null || true
+        cp "${DOWNLOAD_DIR}/binaries/mc" "${PROJECT_ROOT}/ko/14-oadp/" 2>/dev/null || true
+        chmod +x "${PROJECT_ROOT}/en/14-oadp/mc" 2>/dev/null || true
+        chmod +x "${PROJECT_ROOT}/ko/14-oadp/mc" 2>/dev/null || true
+        print_ok "mc client copied to en/14-oadp/ and ko/14-oadp/"
     fi
 }
 
 # =============================================================================
-# 다운로드 파일 검증
+# Verify downloads
 # =============================================================================
 verify_downloads() {
-    print_step "3/3  다운로드된 파일 검증"
+    print_step "3/3  Verify downloaded files"
 
     echo ""
-    print_info "다운로드 검증:"
+    print_info "Download verification:"
 
-    # RHEL9 이미지 확인
+    # Check RHEL9 image
     local rhel_img
     rhel_img=$(ls -t "${DOWNLOAD_DIR}/images/rhel-"*.qcow2 2>/dev/null | head -1 || true)
     if [ -n "$rhel_img" ]; then
-        print_ok "RHEL9 이미지: $(basename "$rhel_img") ($(du -h "$rhel_img" | cut -f1))"
+        print_ok "RHEL9 image: $(basename "$rhel_img") ($(du -h "$rhel_img" | cut -f1))"
     else
-        print_warn "RHEL9 이미지를 찾을 수 없습니다 - 수동으로 다운로드해 주세요"
-        print_warn "  참조: ${DOWNLOAD_DIR}/images/README.txt"
+        print_warn "RHEL9 image not found - please download manually"
+        print_warn "  See: ${DOWNLOAD_DIR}/images/README.txt"
     fi
 
-    # Garage 확인
+    # Check Garage
     local garage_tar
     garage_tar=$(ls -t "${DOWNLOAD_DIR}/containers/garage-"*.tar 2>/dev/null | head -1 || true)
     if [ -n "$garage_tar" ]; then
-        print_ok "Garage 이미지: $(basename "$garage_tar") ($(du -h "$garage_tar" | cut -f1))"
+        print_ok "Garage image: $(basename "$garage_tar") ($(du -h "$garage_tar" | cut -f1))"
     else
-        print_warn "Garage 이미지를 찾을 수 없습니다"
+        print_warn "Garage image not found"
     fi
 
-    # node_exporter 확인
+    # Check node_exporter
     local ne_tar
     ne_tar=$(ls -t "${DOWNLOAD_DIR}/binaries/node_exporter-"*.tar.gz 2>/dev/null | head -1 || true)
     if [ -n "$ne_tar" ]; then
         print_ok "node_exporter: $(basename "$ne_tar") ($(du -h "$ne_tar" | cut -f1))"
     else
-        print_warn "node_exporter를 찾을 수 없습니다"
+        print_warn "node_exporter not found"
     fi
 
-    # mc 확인
+    # Check mc
     if [ -f "${DOWNLOAD_DIR}/binaries/mc" ]; then
-        print_ok "mc 클라이언트: $(du -h "${DOWNLOAD_DIR}/binaries/mc" | cut -f1)"
+        print_ok "mc client: $(du -h "${DOWNLOAD_DIR}/binaries/mc" | cut -f1)"
     else
-        print_warn "mc 클라이언트를 찾을 수 없습니다"
+        print_warn "mc client not found"
     fi
 
     echo ""
-    print_info "전체 다운로드 크기: $(du -sh "$DOWNLOAD_DIR" | cut -f1)"
+    print_info "Total downloaded size: $(du -sh "$DOWNLOAD_DIR" | cut -f1)"
 }
 
 # =============================================================================
 # Main
 # =============================================================================
 main() {
-    print_step "OpenShift Virtualization POC - 폐쇄망 설치"
+    print_step "OpenShift Virtualization POC - Air-gapped Installation"
     echo ""
-    print_info "이 스크립트는 다운로드된 파일을 폐쇄망 배포용으로 준비합니다."
+    print_info "This script prepares downloaded files for air-gapped deployment."
     echo ""
 
     preflight
@@ -222,16 +236,16 @@ main() {
     verify_downloads
 
     echo ""
-    print_step "설치 완료"
+    print_step "Installation Complete"
     echo ""
-    print_ok "폐쇄망 환경이 준비되었습니다!"
+    print_ok "Air-gapped environment is ready!"
     echo ""
-    print_info "다음 단계:"
-    echo "  1. env.conf 설정을 검토하세요"
-    echo "  2. 실행: ./setup.sh"
-    echo "  3. 실행: ./poc.sh"
+    print_info "Next steps:"
+    echo "  1. Review env.conf settings"
+    echo "  2. Run: ./setup.sh"
+    echo "  3. Run: ./poc.sh"
     echo ""
-    print_info "RHEL9 이미지 업로드:"
+    print_info "For RHEL9 image upload:"
     echo "  cd 01-template"
     echo "  ./01-template.sh"
 }
@@ -240,14 +254,14 @@ main "\$@"
 INSTALL_EOF
 
     chmod +x "${TEMP_DIR}/00-prepare/install.sh"
-    print_ok "설치 스크립트 생성됨"
+    print_ok "Installation script created"
 }
 
 # =============================================================================
-# 패키지 README 생성
+# Create README for the package
 # =============================================================================
 create_package_readme() {
-    print_step "3/4  패키지 README 생성"
+    print_step "3/4  Create package README"
 
     cat > "${TEMP_DIR}/00-prepare/README-AIRGAP.md" <<'README_EOF'
 # Air-gapped Installation Guide
@@ -391,52 +405,52 @@ chmod +x 10-node-exporter/node_exporter
 
 README_EOF
 
-    print_ok "패키지 README 생성됨"
+    print_ok "Package README created"
 }
 
 # =============================================================================
-# tarball 생성
+# Create tarball
 # =============================================================================
 create_tarball() {
-    print_step "4/4  배포용 tarball 생성"
+    print_step "4/4  Create distribution tarball"
 
     local output_file="${PROJECT_ROOT}/${PACKAGE_NAME}.tar.gz"
 
-    print_info "tarball 생성 중: ${output_file}"
-    print_info "몇 분 정도 소요될 수 있습니다..."
+    print_info "Creating tarball: ${output_file}"
+    print_info "This may take several minutes..."
 
     cd /tmp
     tar czf "$output_file" "${PACKAGE_NAME}/"
 
-    print_ok "tarball 생성됨: ${output_file}"
+    print_ok "Tarball created: ${output_file}"
 
     echo ""
-    print_info "패키지 상세 정보:"
+    print_info "Package details:"
     ls -lh "$output_file"
     echo ""
-    print_info "패키지 내용:"
+    print_info "Package contents:"
     tar tzf "$output_file" | head -20
-    echo "  ... (전체 목록은 'tar tzf'를 사용하세요)"
+    echo "  ... (use 'tar tzf' to see full list)"
 }
 
 # =============================================================================
-# 정리
+# Cleanup
 # =============================================================================
 cleanup() {
-    print_step "정리"
+    print_step "Cleanup"
 
-    print_info "임시 디렉토리 삭제 중: ${TEMP_DIR}"
+    print_info "Removing temporary directory: ${TEMP_DIR}"
     rm -rf "$TEMP_DIR"
-    print_ok "정리 완료"
+    print_ok "Cleanup complete"
 }
 
 # =============================================================================
 # Main
 # =============================================================================
 main() {
-    print_step "OpenShift Virtualization POC - 패키징 스크립트"
+    print_step "OpenShift Virtualization POC - Package Script"
     echo ""
-    print_info "폐쇄망 설치를 위한 배포 패키지를 생성합니다"
+    print_info "Creating distribution package for air-gapped installation"
     echo ""
 
     preflight
@@ -447,12 +461,12 @@ main() {
     cleanup
 
     echo ""
-    print_step "패키징 완료!"
+    print_step "Packaging Complete!"
     echo ""
-    print_ok "배포 패키지 준비 완료: ${PACKAGE_NAME}.tar.gz"
+    print_ok "Distribution package ready: ${PACKAGE_NAME}.tar.gz"
     echo ""
-    print_info "이 파일을 폐쇄망 bastion 호스트로 전송하고 압축을 해제하세요."
-    print_info "설치 방법은 00-prepare/README-AIRGAP.md를 참조하세요."
+    print_info "Transfer this file to your air-gapped bastion host and extract it."
+    print_info "See 00-prepare/README-AIRGAP.md for installation instructions."
 }
 
 main "$@"

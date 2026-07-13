@@ -41,9 +41,9 @@ cd en
 
 | Document | Description |
 |----------|-------------|
-| [00-prepare/README.md](00-prepare/README.md) | Air-gapped preparation guide |
-| [00-prepare/download.sh](00-prepare/download.sh) | Download required files |
-| [00-prepare/package.sh](00-prepare/package.sh) | Create distribution tarball |
+| [../00-prepare/README.md](../00-prepare/README.md) | Air-gapped preparation guide |
+| [../00-prepare/download.sh](../00-prepare/download.sh) | Download required files |
+| [../00-prepare/package.sh](../00-prepare/package.sh) | Create distribution tarball |
 
 ## Operator Installation Guides
 

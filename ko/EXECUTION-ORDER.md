@@ -94,7 +94,7 @@ cd virt-poc
 #### 1-2. 필요 파일 다운로드
 
 ```bash
-cd 00-prepare
+cd ../00-prepare
 ./download.sh
 ```
 
@@ -107,7 +107,7 @@ cd 00-prepare
 **RHEL9 이미지 수동 다운로드:**
 1. https://access.redhat.com/downloads/content/rhel 접속
 2. RHEL 9.5 KVM Guest Image 다운로드
-3. `00-prepare/downloads/images/` 폴더에 저장
+3. `../00-prepare/downloads/images/` 폴더에 저장
 
 #### 1-3. 배포 패키지 생성
 
@@ -149,7 +149,7 @@ oc login https://api.cluster.example.com:6443
 #### 2-3. Air-gapped 설치
 
 ```bash
-cd 00-prepare
+cd ../00-prepare
 ./install.sh
 ```
 
@@ -483,7 +483,7 @@ less operators/iscsi-storage.md
 1. `git clone` → 2. `oc login` → 3. Operator 설치 → 4. `./setup.sh` → 5. `./poc.sh` → 6. `./check-features.sh`
 
 ### Air-gapped 환경
-**준비:** `git clone` → `cd 00-prepare` → `./download.sh` → `./package.sh` → 전송
+**준비:** `git clone` → `cd ../00-prepare` → `./download.sh` → `./package.sh` → 전송
 
 **배포:** 추출 → `oc login` → `./install.sh` → `./setup.sh` → `./poc.sh` → `./check-features.sh`
 
@@ -507,7 +507,7 @@ less operators/iscsi-storage.md
 - .DS_Store 파일
 
 **선택적 삭제 (확인 메시지):**
-- `00-prepare/downloads/` - 다운로드된 파일
+- `../00-prepare/downloads/` - 다운로드된 파일
 - `virt-poc-*.tar.gz` - 패키징된 tarball
 
 ### 유지되는 항목
