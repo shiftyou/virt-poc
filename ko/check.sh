@@ -24,6 +24,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 RED='\033[0;31m'
+MAGENTA='\033[0;35m'
 GRAY='\033[0;90m'
 NC='\033[0m'
 
@@ -31,6 +32,7 @@ print_info()  { echo -e "${BLUE}[정보]${NC} $1"; }
 print_ok()    { echo -e "${GREEN}[통과]${NC} $1"; }
 print_warn()  { echo -e "${YELLOW}[경고]${NC} $1"; }
 print_fail()  { echo -e "${RED}[실패]${NC} $1"; }
+print_blocked() { echo -e "${MAGENTA}[불가]${NC} $1"; }
 print_skip()  { echo -e "${GRAY}[건너뜀]${NC} $1"; }
 print_section() { echo -e "\n${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"; echo -e "${CYAN}  $1${NC}"; echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"; }
 
@@ -39,6 +41,7 @@ TOTAL=0
 PASSED=0
 FAILED=0
 WARNED=0
+BLOCKED=0
 SKIPPED=0
 
 # =============================================================================
@@ -62,6 +65,11 @@ test_fail() {
 test_warn() {
     WARNED=$((WARNED+1))
     print_warn "$1"
+}
+
+test_blocked() {
+    BLOCKED=$((BLOCKED+1))
+    print_blocked "$1"
 }
 
 test_skip() {
@@ -139,7 +147,7 @@ check_network() {
     if echo "$CSV_CACHE" | grep -qi "kubernetes-nmstate"; then
         test_pass "NMState Operator 설치됨"
     else
-        test_warn "NMState Operator 미설치"
+        test_blocked "NMState Operator 미설치"
     fi
 
     test_start "NNCP (NodeNetworkConfigurationPolicy)"
@@ -259,7 +267,7 @@ check_descheduler() {
     if echo "$CSV_CACHE" | grep -qi "descheduler"; then
         test_pass "Descheduler Operator 설치됨"
     else
-        test_warn "Descheduler Operator 미설치"
+        test_blocked "Descheduler Operator 미설치"
         return
     fi
 
@@ -322,14 +330,14 @@ check_monitoring() {
     if echo "$CSV_CACHE" | grep -qi "cluster-observability"; then
         test_pass "COO 설치됨"
     else
-        test_warn "COO 미설치"
+        test_blocked "COO 미설치"
     fi
 
     test_start "Grafana Operator"
     if echo "$CSV_CACHE" | grep -qi "grafana-operator"; then
         test_pass "Grafana Operator 설치됨"
     else
-        test_warn "Grafana Operator 미설치"
+        test_blocked "Grafana Operator 미설치"
     fi
 }
 
@@ -343,7 +351,7 @@ check_mtv() {
     if echo "$CSV_CACHE" | grep -qi "mtv-operator\|forklift"; then
         test_pass "MTV Operator 설치됨"
     else
-        test_warn "MTV Operator 미설치"
+        test_blocked "MTV Operator 미설치"
     fi
 }
 
@@ -357,7 +365,7 @@ check_oadp() {
     if echo "$CSV_CACHE" | grep -qi "oadp"; then
         test_pass "OADP Operator 설치됨"
     else
-        test_warn "OADP Operator 미설치"
+        test_blocked "OADP Operator 미설치"
         return
     fi
 
@@ -395,21 +403,21 @@ check_node_management() {
     if echo "$CSV_CACHE" | grep -qi "node-maintenance"; then
         test_pass "Node Maintenance Operator 설치됨"
     else
-        test_warn "Node Maintenance Operator 미설치"
+        test_blocked "Node Maintenance Operator 미설치"
     fi
 
     test_start "Self Node Remediation Operator"
     if echo "$CSV_CACHE" | grep -qi "self-node-remediation"; then
         test_pass "SNR Operator 설치됨"
     else
-        test_warn "SNR Operator 미설치"
+        test_blocked "SNR Operator 미설치"
     fi
 
     test_start "Fence Agents Remediation Operator"
     if echo "$CSV_CACHE" | grep -qi "fence-agents"; then
         test_pass "FAR Operator 설치됨"
     else
-        test_warn "FAR Operator 미설치"
+        test_blocked "FAR Operator 미설치"
     fi
 }
 
@@ -448,14 +456,14 @@ check_logging() {
     if echo "$CSV_CACHE" | grep -qi "cluster-logging"; then
         test_pass "Logging Operator 설치됨"
     else
-        test_warn "Logging Operator 미설치"
+        test_blocked "Logging Operator 미설치"
     fi
 
     test_start "Loki Operator"
     if echo "$CSV_CACHE" | grep -qi "loki-operator"; then
         test_pass "Loki Operator 설치됨"
     else
-        test_warn "Loki Operator 미설치"
+        test_blocked "Loki Operator 미설치"
     fi
 
     test_start "LokiStack"
@@ -516,6 +524,7 @@ print_summary() {
     printf "  ${GREEN}%-20s %3d${NC}\n" "통과:" "$PASSED"
     printf "  ${RED}%-20s %3d${NC}\n" "실패:" "$FAILED"
     printf "  ${YELLOW}%-20s %3d${NC}\n" "경고:" "$WARNED"
+    printf "  ${MAGENTA}%-20s %3d${NC}\n" "불가:" "$BLOCKED"
     printf "  ${GRAY}%-20s %3d${NC}\n" "건너뜀:" "$SKIPPED"
     echo ""
     printf "  통과율: %d%%\n" "$pass_rate"
@@ -527,6 +536,11 @@ print_summary() {
         print_fail "${FAILED}개 필수 점검 항목이 실패했습니다"
         echo ""
         echo "  위 출력을 검토하고 해당 lab 스크립트를 실행하세요."
+    fi
+
+    if [ "$BLOCKED" -gt 0 ]; then
+        echo ""
+        print_blocked "${BLOCKED}개 Operator가 설치되지 않아 해당 Lab을 실행할 수 없습니다"
     fi
 
     if [ "$WARNED" -gt 0 ]; then

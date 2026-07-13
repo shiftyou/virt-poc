@@ -24,6 +24,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 RED='\033[0;31m'
+MAGENTA='\033[0;35m'
 GRAY='\033[0;90m'
 NC='\033[0m'
 
@@ -31,6 +32,7 @@ print_info()  { echo -e "${BLUE}[INFO]${NC} $1"; }
 print_ok()    { echo -e "${GREEN}[PASS]${NC} $1"; }
 print_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 print_fail()  { echo -e "${RED}[FAIL]${NC} $1"; }
+print_blocked() { echo -e "${MAGENTA}[N/A]${NC} $1"; }
 print_skip()  { echo -e "${GRAY}[SKIP]${NC} $1"; }
 print_section() { echo -e "\n${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"; echo -e "${CYAN}  $1${NC}"; echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"; }
 
@@ -39,6 +41,7 @@ TOTAL=0
 PASSED=0
 FAILED=0
 WARNED=0
+BLOCKED=0
 SKIPPED=0
 
 # =============================================================================
@@ -62,6 +65,11 @@ test_fail() {
 test_warn() {
     WARNED=$((WARNED+1))
     print_warn "$1"
+}
+
+test_blocked() {
+    BLOCKED=$((BLOCKED+1))
+    print_blocked "$1"
 }
 
 test_skip() {
@@ -139,7 +147,7 @@ check_network() {
     if echo "$CSV_CACHE" | grep -qi "kubernetes-nmstate"; then
         test_pass "NMState Operator installed"
     else
-        test_warn "NMState Operator not installed"
+        test_blocked "NMState Operator not installed"
     fi
 
     test_start "NNCP (NodeNetworkConfigurationPolicy)"
@@ -259,7 +267,7 @@ check_descheduler() {
     if echo "$CSV_CACHE" | grep -qi "descheduler"; then
         test_pass "Descheduler Operator installed"
     else
-        test_warn "Descheduler Operator not installed"
+        test_blocked "Descheduler Operator not installed"
         return
     fi
 
@@ -322,14 +330,14 @@ check_monitoring() {
     if echo "$CSV_CACHE" | grep -qi "cluster-observability"; then
         test_pass "COO installed"
     else
-        test_warn "COO not installed"
+        test_blocked "COO not installed"
     fi
 
     test_start "Grafana Operator"
     if echo "$CSV_CACHE" | grep -qi "grafana-operator"; then
         test_pass "Grafana Operator installed"
     else
-        test_warn "Grafana Operator not installed"
+        test_blocked "Grafana Operator not installed"
     fi
 }
 
@@ -343,7 +351,7 @@ check_mtv() {
     if echo "$CSV_CACHE" | grep -qi "mtv-operator\|forklift"; then
         test_pass "MTV Operator installed"
     else
-        test_warn "MTV Operator not installed"
+        test_blocked "MTV Operator not installed"
     fi
 }
 
@@ -357,7 +365,7 @@ check_oadp() {
     if echo "$CSV_CACHE" | grep -qi "oadp"; then
         test_pass "OADP Operator installed"
     else
-        test_warn "OADP Operator not installed"
+        test_blocked "OADP Operator not installed"
         return
     fi
 
@@ -395,21 +403,21 @@ check_node_management() {
     if echo "$CSV_CACHE" | grep -qi "node-maintenance"; then
         test_pass "Node Maintenance Operator installed"
     else
-        test_warn "Node Maintenance Operator not installed"
+        test_blocked "Node Maintenance Operator not installed"
     fi
 
     test_start "Self Node Remediation Operator"
     if echo "$CSV_CACHE" | grep -qi "self-node-remediation"; then
         test_pass "SNR Operator installed"
     else
-        test_warn "SNR Operator not installed"
+        test_blocked "SNR Operator not installed"
     fi
 
     test_start "Fence Agents Remediation Operator"
     if echo "$CSV_CACHE" | grep -qi "fence-agents"; then
         test_pass "FAR Operator installed"
     else
-        test_warn "FAR Operator not installed"
+        test_blocked "FAR Operator not installed"
     fi
 }
 
@@ -448,14 +456,14 @@ check_logging() {
     if echo "$CSV_CACHE" | grep -qi "cluster-logging"; then
         test_pass "Logging Operator installed"
     else
-        test_warn "Logging Operator not installed"
+        test_blocked "Logging Operator not installed"
     fi
 
     test_start "Loki Operator"
     if echo "$CSV_CACHE" | grep -qi "loki-operator"; then
         test_pass "Loki Operator installed"
     else
-        test_warn "Loki Operator not installed"
+        test_blocked "Loki Operator not installed"
     fi
 
     test_start "LokiStack"
@@ -516,6 +524,7 @@ print_summary() {
     printf "  ${GREEN}%-20s %3d${NC}\n" "Passed:" "$PASSED"
     printf "  ${RED}%-20s %3d${NC}\n" "Failed:" "$FAILED"
     printf "  ${YELLOW}%-20s %3d${NC}\n" "Warnings:" "$WARNED"
+    printf "  ${MAGENTA}%-20s %3d${NC}\n" "Blocked:" "$BLOCKED"
     printf "  ${GRAY}%-20s %3d${NC}\n" "Skipped:" "$SKIPPED"
     echo ""
     printf "  Pass Rate: %d%%\n" "$pass_rate"
@@ -527,6 +536,11 @@ print_summary() {
         print_fail "$FAILED critical check(s) failed"
         echo ""
         echo "  Review the output above and run the corresponding lab scripts."
+    fi
+
+    if [ "$BLOCKED" -gt 0 ]; then
+        echo ""
+        print_blocked "$BLOCKED operator(s) not installed — related labs cannot run"
     fi
 
     if [ "$WARNED" -gt 0 ]; then
