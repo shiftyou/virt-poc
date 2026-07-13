@@ -35,10 +35,10 @@ ODF 없이 S3 백엔드를 빠르게 구성하고 싶을 때 사용합니다.
 ### 1. Namespace 및 SCC 설정
 
 ```bash
-oc new-project garage
+oc new-project poc-garage
 
 # Garage 컨테이너는 임의의 UID로 /data 디렉토리에 쓰기 권한이 필요 — anyuid 부여
-oc adm policy add-scc-to-user anyuid -z default -n garage
+oc adm policy add-scc-to-user anyuid -z default -n poc-garage
 ```
 
 ### 2. 리소스 배포
@@ -50,7 +50,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: garage-data
-  namespace: garage
+  namespace: poc-garage
 spec:
   accessModes:
     - ReadWriteOnce
@@ -62,7 +62,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: garage-meta
-  namespace: garage
+  namespace: poc-garage
 spec:
   accessModes:
     - ReadWriteOnce
@@ -74,7 +74,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: garage-credentials
-  namespace: garage
+  namespace: poc-garage
 type: Opaque
 stringData:
   accessKey: "garageadmin"
@@ -84,7 +84,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: garage
-  namespace: garage
+  namespace: poc-garage
 spec:
   replicas: 1
   selector:
@@ -129,7 +129,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: garage-config
-  namespace: garage
+  namespace: poc-garage
 data:
   garage.toml: |
     metadata_dir = "/meta"
@@ -154,7 +154,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: garage
-  namespace: garage
+  namespace: poc-garage
 spec:
   selector:
     app: garage
@@ -170,7 +170,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: garage-api
-  namespace: garage
+  namespace: poc-garage
 spec:
   to:
     kind: Service
@@ -189,43 +189,43 @@ Garage Pod가 실행되면 클러스터 레이아웃을 구성하고 버킷을 �
 
 ```bash
 # Pod 준비 대기
-oc wait --for=condition=ready pod -l app=garage -n garage --timeout=300s
+oc wait --for=condition=ready pod -l app=garage -n poc-garage --timeout=300s
 
 # Pod 이름 조회
-GARAGE_POD=$(oc get pod -n garage -l app=garage -o jsonpath='{.items[0].metadata.name}')
+GARAGE_POD=$(oc get pod -n poc-garage -l app=garage -o jsonpath='{.items[0].metadata.name}')
 
 # 노드 ID 조회
-NODE_ID=$(oc exec -n garage $GARAGE_POD -- garage node id | grep "Node ID:" | awk '{print $3}')
+NODE_ID=$(oc exec -n poc-garage $GARAGE_POD -- garage node id | grep "Node ID:" | awk '{print $3}')
 
 # 레이아웃 구성 (단일 노드 설정)
-oc exec -n garage $GARAGE_POD -- garage layout assign -z dc1 -c 1 $NODE_ID
+oc exec -n poc-garage $GARAGE_POD -- garage layout assign -z dc1 -c 1 $NODE_ID
 
 # 레이아웃 적용
-oc exec -n garage $GARAGE_POD -- garage layout apply --version 1
+oc exec -n poc-garage $GARAGE_POD -- garage layout apply --version 1
 
 # 버킷 생성
-oc exec -n garage $GARAGE_POD -- garage bucket create velero-backups
+oc exec -n poc-garage $GARAGE_POD -- garage bucket create velero-backups
 
 # 자격 증명으로 버킷 접근 허용
-oc exec -n garage $GARAGE_POD -- garage bucket allow \
+oc exec -n poc-garage $GARAGE_POD -- garage bucket allow \
   --read --write \
   velero-backups \
   --key garageadmin
 
 # 버킷 확인
-oc exec -n garage $GARAGE_POD -- garage bucket list
+oc exec -n poc-garage $GARAGE_POD -- garage bucket list
 ```
 
 ### 4. 기동 확인
 
 ```bash
-oc get pods -n garage
+oc get pods -n poc-garage
 # NAME                      READY   STATUS    RESTARTS   AGE
 # garage-xxxxxxxxx-xxxxx    1/1     Running   0          1m
 
-oc get route -n garage
+oc get route -n poc-garage
 # NAME          HOST/PORT                            ...
-# garage-api    garage-api-garage.apps.cluster.com   ...
+# garage-api    garage-api-poc-garage.apps.cluster.com   ...
 ```
 
 ### 5. 수동 env.conf 설정
@@ -234,7 +234,7 @@ oc get route -n garage
 
 ```bash
 GARAGE_INSTALLED=true
-GARAGE_ENDPOINT=https://garage-api-garage.apps.<cluster-domain>
+GARAGE_ENDPOINT=https://garage-api-poc-garage.apps.<cluster-domain>
 GARAGE_ACCESS_KEY=garageadmin
 GARAGE_SECRET_KEY=garageadmin
 GARAGE_BUCKET=velero-backups

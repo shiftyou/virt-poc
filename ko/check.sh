@@ -377,7 +377,7 @@ check_oadp() {
     fi
 
     test_start "Garage S3 스토리지"
-    if oc get pods -n ${GARAGE_NS:-garage} 2>/dev/null | grep -q garage; then
+    if oc get pods -n ${GARAGE_NS:-poc-garage} 2>/dev/null | grep -q garage; then
         test_pass "Garage S3 스토리지 실행 중"
     else
         test_warn "Garage 미배포 (14-oadp/14-oadp.md 참조)"

@@ -45,6 +45,214 @@ BSL_NAME="poc-dpa-1"
 
 source "${SCRIPT_DIR}/../utils/common.sh"
 
+GARAGE_DEFAULT_IMAGE="dxflrs/garage:v1.0.1"
+
+install_garage() {
+    echo ""
+    print_warn "클러스터에서 Garage S3 서비스를 찾을 수 없습니다."
+    read -r -p "  Garage S3 스토리지를 자동 설치하시겠습니까? (Y/n): " _ans
+    if [[ "${_ans:-}" =~ ^[Nn]$ ]]; then
+        return 1
+    fi
+
+    local garage_image="${GARAGE_DEFAULT_IMAGE}"
+    read -r -p "  Garage 컨테이너 이미지 [${garage_image}]: " _input
+    [ -n "$_input" ] && garage_image="$_input"
+    print_info "사용할 이미지: ${garage_image}"
+
+    # Namespace
+    if oc get namespace poc-garage &>/dev/null; then
+        print_ok "Namespace poc-garage 이미 존재합니다 — 건너뜀"
+    else
+        oc new-project poc-garage > /dev/null
+        print_ok "Namespace poc-garage 생성됨"
+    fi
+
+    # SCC
+    oc adm policy add-scc-to-user anyuid -z default -n poc-garage &>/dev/null
+    print_ok "poc-garage의 default SA에 anyuid SCC 부여됨"
+
+    # 리소스 배포
+    print_info "Garage 리소스 배포 중..."
+    oc apply -f - <<EOF
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: garage-data
+  namespace: poc-garage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: garage-meta
+  namespace: poc-garage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: garage-credentials
+  namespace: poc-garage
+type: Opaque
+stringData:
+  accessKey: "garageadmin"
+  secretKey: "garageadmin"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: garage-config
+  namespace: poc-garage
+data:
+  garage.toml: |
+    metadata_dir = "/meta"
+    data_dir = "/data"
+
+    replication_factor = 1
+
+    rpc_bind_addr = "[::]:3901"
+    rpc_public_addr = "127.0.0.1:3901"
+    rpc_secret = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+
+    [s3_api]
+    s3_region = "garage"
+    api_bind_addr = "[::]:3900"
+    root_domain = ".s3.garage.localhost"
+
+    [s3_web]
+    bind_addr = "[::]:3902"
+    root_domain = ".web.garage.localhost"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: garage
+  namespace: poc-garage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: garage
+  template:
+    metadata:
+      labels:
+        app: garage
+    spec:
+      containers:
+        - name: garage
+          image: ${garage_image}
+          env:
+            - name: GARAGE_RPC_SECRET
+              value: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+          ports:
+            - containerPort: 3900
+              name: s3-api
+            - containerPort: 3902
+              name: web
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: meta
+              mountPath: /meta
+            - name: config
+              mountPath: /etc/garage.toml
+              subPath: garage.toml
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: garage-data
+        - name: meta
+          persistentVolumeClaim:
+            claimName: garage-meta
+        - name: config
+          configMap:
+            name: garage-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: garage
+  namespace: poc-garage
+spec:
+  selector:
+    app: garage
+  ports:
+    - name: s3-api
+      port: 3900
+      targetPort: 3900
+    - name: web
+      port: 3902
+      targetPort: 3902
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: garage-api
+  namespace: poc-garage
+spec:
+  to:
+    kind: Service
+    name: garage
+  port:
+    targetPort: s3-api
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+EOF
+    print_ok "Garage 리소스 배포 완료"
+
+    # Pod 대기
+    print_info "Garage Pod 준비 대기 중..."
+    if ! oc wait --for=condition=ready pod -l app=garage -n poc-garage --timeout=300s 2>/dev/null; then
+        print_error "Garage Pod 시작 실패. 확인: oc get pods -n poc-garage"
+        return 1
+    fi
+    print_ok "Garage Pod 준비됨"
+
+    # 레이아웃 구성 및 버킷 생성
+    local garage_pod node_id
+    garage_pod=$(oc get pod -n poc-garage -l app=garage -o jsonpath='{.items[0].metadata.name}')
+
+    local id_output
+    id_output=$(oc exec -n poc-garage "$garage_pod" -- garage node id 2>&1 || true)
+    # "Node ID: <hex>" 형식
+    node_id=$(echo "$id_output" | grep -i "Node ID" | awk '{print $NF}')
+    # "<hex>@<addr>" 형식
+    [ -z "$node_id" ] && node_id=$(echo "$id_output" | grep -oE '[a-f0-9]{16,}' | head -1)
+
+    if [ -z "$node_id" ]; then
+        print_error "Garage 노드 ID를 가져올 수 없습니다"
+        print_error "  출력: ${id_output}"
+        return 1
+    fi
+    print_info "Garage 노드 ID: ${node_id}"
+
+    oc exec -n poc-garage "$garage_pod" -- garage layout assign -z dc1 -c 1G "$node_id" 2>&1 || true
+    oc exec -n poc-garage "$garage_pod" -- garage layout apply --version 1 2>&1 || true
+    print_ok "Garage 레이아웃 구성 완료"
+
+    oc exec -n poc-garage "$garage_pod" -- garage bucket create velero 2>&1 || true
+    oc exec -n poc-garage "$garage_pod" -- garage key import --yes garageadmin garageadmin 2>&1 || \
+        oc exec -n poc-garage "$garage_pod" -- garage key create --name garageadmin 2>&1 || true
+    oc exec -n poc-garage "$garage_pod" -- garage bucket allow --read --write velero --key garageadmin 2>&1 || true
+    print_ok "버킷 'velero' 생성 및 접근 권한 부여됨"
+
+    print_ok "Garage S3 설치 완료"
+    return 0
+}
+
 preflight() {
     print_step "사전 점검"
 
@@ -74,6 +282,11 @@ preflight() {
     elif [ -z "${GARAGE_ENDPOINT:-}" ]; then
         # env.conf에 Garage 정보 없음 — 라이브 감지 시도
         auto_detect_garage
+        if [ "${GARAGE_FOUND}" != "true" ]; then
+            if install_garage; then
+                auto_detect_garage
+            fi
+        fi
         if [ "${GARAGE_FOUND}" = "true" ]; then
             BACKEND="garage"
             S3_ENDPOINT="${GARAGE_ENDPOINT}"
@@ -692,6 +905,7 @@ cleanup() {
     oc delete objectbucketclaim obc-backups -n "$_oadp_ns" --ignore-not-found 2>/dev/null || true
     oc delete volumesnapshotclass poc-volumesnapshotclass --ignore-not-found 2>/dev/null || true
     oc delete consoleyamlsample poc-dataprotectionapplication poc-backup poc-restore --ignore-not-found 2>/dev/null || true
+    oc delete project poc-garage --ignore-not-found 2>/dev/null || true
     print_ok "14-oadp 리소스 성공적으로 삭제됨"
 }
 

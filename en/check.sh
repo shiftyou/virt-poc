@@ -377,7 +377,7 @@ check_oadp() {
     fi
 
     test_start "Garage S3 storage"
-    if oc get pods -n ${GARAGE_NS:-garage} 2>/dev/null | grep -q garage; then
+    if oc get pods -n ${GARAGE_NS:-poc-garage} 2>/dev/null | grep -q garage; then
         test_pass "Garage S3 storage running"
     else
         test_warn "Garage not deployed (see 14-oadp/14-oadp.md)"
