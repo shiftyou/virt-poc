@@ -52,7 +52,6 @@ virt-poc/
 │   ├── utils/                # Shared utilities
 │   ├── operators/            # Operator installation guides
 │   ├── sample/               # Sample YAML files
-│   ├── 00-prepare/           # Air-gapped preparation
 │   ├── 01-template/          # VM template registration
 │   ├── 02-network/           # NNCP / NAD / Linux Bridge
 │   ├── ...
@@ -64,6 +63,9 @@ virt-poc/
 │   ├── ...
 │   └── 21-upgrade/
 │
+├── download.sh               # Air-gapped file downloader
+├── package.sh                # Air-gapped tarball packager
+├── AIRGAP.md                 # Air-gapped preparation guide
 ├── CLAUDE.md                 # Project conventions
 └── README.md                 # This file
 ```
@@ -113,15 +115,14 @@ For operator installation guides, see `en/operators/` or `ko/operators/`.
 
 ```bash
 # Phase 1: Internet-connected host
-cd en/00-prepare     # or ko/00-prepare
 ./download.sh        # Download required files
 ./package.sh         # Create tarball
 
 # Phase 2: Air-gapped bastion
 tar xzf virt-poc-*.tar.gz
-cd virt-poc-*/00-prepare
+cd virt-poc-*/
 ./install.sh
-cd ..
+cd en                # or cd ko
 ./setup.sh
 ./poc.sh start
 ```

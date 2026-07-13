@@ -218,7 +218,7 @@ Files:
 Installation:
 -------------
 1. Extract this package on the bastion host
-2. Run: ./00-prepare/install.sh
+2. Run: ./install.sh
 3. Follow the setup guide
 
 For air-gapped installation:

@@ -16,7 +16,7 @@ OpenShift Virtualization POC를 Air-gapped 환경에서 실행하기 위한 준�
 
 ```bash
 git clone https://github.com/shiftyou/virt-poc.git
-cd virt-poc/00-prepare
+cd virt-poc
 ```
 
 ### 2. 필요한 파일 다운로드
@@ -65,7 +65,6 @@ oc login https://api.cluster.example.com:6443
 ### 3. 설치 스크립트 실행
 
 ```bash
-cd 00-prepare
 ./install.sh
 ```
 
@@ -77,7 +76,7 @@ cd 00-prepare
 ### 4. 환경 설정
 
 ```bash
-cd ../en   # 또는 cd ../ko
+cd en   # 또는 cd ko
 ./setup.sh
 ```
 
@@ -146,7 +145,6 @@ RHEL9 이미지는 Red Hat 구독이 필요하므로 수동으로 다운로드�
 ### 다운로드 검증
 
 ```bash
-cd 00-prepare
 ls -lh downloads/images/
 ls -lh downloads/containers/
 ls -lh downloads/binaries/
@@ -159,8 +157,8 @@ ls -lh downloads/binaries/
 podman images | grep garage
 
 # 바이너리 확인
-ls -l ../en/10-node-exporter/node_exporter-*.tar.gz
-ls -l ../en/14-oadp/mc
+ls -l en/10-node-exporter/node_exporter-*.tar.gz
+ls -l en/14-oadp/mc
 
 # RHEL9 이미지 확인
 ls -l downloads/images/rhel-*.qcow2
@@ -180,8 +178,8 @@ ls -l downloads/images/rhel-*.qcow2
 ### "Permission denied"
 ```bash
 chmod +x download.sh package.sh
-chmod +x ../en/10-node-exporter/*.sh
-chmod +x ../en/14-oadp/mc
+chmod +x en/10-node-exporter/*.sh
+chmod +x en/14-oadp/mc
 ```
 
 ## 💡 Tips
@@ -193,9 +191,9 @@ chmod +x ../en/14-oadp/mc
 
 ## 📚 Related Documentation
 
-- [README.md](../README.md) - 전체 프로젝트 가이드
-- [01-template/01-template.md](../en/01-template/01-template.md) - RHEL9 이미지 업로드
-- [14-oadp/14-oadp.md](../en/14-oadp/14-oadp.md) - Garage 설치 가이드
+- [README.md](README.md) - 전체 프로젝트 가이드
+- [01-template/01-template.md](en/01-template/01-template.md) - RHEL9 이미지 업로드
+- [14-oadp/14-oadp.md](en/14-oadp/14-oadp.md) - Garage 설치 가이드
 
 ## ⚖️ License & Compliance
 

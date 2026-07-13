@@ -12,7 +12,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PROJECT_ROOT="${SCRIPT_DIR}"
 PACKAGE_NAME="virt-poc-$(date +%Y%m%d-%H%M%S)"
 TEMP_DIR="/tmp/${PACKAGE_NAME}"
 
@@ -75,7 +75,8 @@ copy_project() {
 create_install_script() {
     print_step "2/4  Create installation script"
 
-    cat > "${TEMP_DIR}/00-prepare/install.sh" <<'INSTALL_EOF'
+    mkdir -p "${TEMP_DIR}"
+    cat > "${TEMP_DIR}/install.sh" <<'INSTALL_EOF'
 #!/bin/bash
 # =============================================================================
 # install.sh
@@ -86,7 +87,7 @@ create_install_script() {
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PROJECT_ROOT="${SCRIPT_DIR}"
 DOWNLOAD_DIR="${SCRIPT_DIR}/downloads"
 
 GREEN='\033[0;32m'
@@ -253,7 +254,7 @@ main() {
 main "\$@"
 INSTALL_EOF
 
-    chmod +x "${TEMP_DIR}/00-prepare/install.sh"
+    chmod +x "${TEMP_DIR}/install.sh"
     print_ok "Installation script created"
 }
 
@@ -263,7 +264,7 @@ INSTALL_EOF
 create_package_readme() {
     print_step "3/4  Create package README"
 
-    cat > "${TEMP_DIR}/00-prepare/README-AIRGAP.md" <<'README_EOF'
+    cat > "${TEMP_DIR}/README-AIRGAP.md" <<'README_EOF'
 # Air-gapped Installation Guide
 
 This package contains everything needed for OpenShift Virtualization POC in an air-gapped environment.
@@ -272,17 +273,15 @@ This package contains everything needed for OpenShift Virtualization POC in an a
 
 ```
 virt-poc/
-├── 00-prepare/
-│   ├── downloads/          # Downloaded files
-│   │   ├── images/         # RHEL9 qcow2
-│   │   ├── containers/     # Garage container tar
-│   │   └── binaries/       # node_exporter, mc
-│   ├── install.sh          # Air-gapped installation script
-│   └── README-AIRGAP.md    # This file
-├── 01-template/            # VM template lab
-├── 02-network/             # Network configuration
-├── ... (all other labs)
-└── setup.sh                # Environment setup
+├── downloads/              # Downloaded files
+│   ├── images/             # RHEL9 qcow2
+│   ├── containers/         # Garage container tar
+│   └── binaries/           # node_exporter, mc
+├── install.sh              # Air-gapped installation script
+├── README-AIRGAP.md        # This file
+├── en/                     # English labs
+├── ko/                     # Korean labs
+└── setup.sh                # Environment setup (inside en/ or ko/)
 ```
 
 ## Prerequisites
@@ -309,7 +308,6 @@ virt-poc/
 
 2. **Download required files**
    ```bash
-   cd 00-prepare
    ./download.sh
    ```
 
@@ -341,25 +339,19 @@ virt-poc/
 
 3. **Run installation script**
    ```bash
-   cd 00-prepare
    ./install.sh
    ```
 
 4. **Configure environment**
    ```bash
-   cd ..
+   cd en   # or cd ko
    ./setup.sh
    ```
    This will detect operators and configure env.conf
 
 5. **Run all labs**
    ```bash
-   ./poc.sh
-   ```
-   Or run individual labs:
-   ```bash
-   cd 01-template
-   ./01-template.sh
+   ./poc.sh start
    ```
 
 ## Container Images
@@ -369,7 +361,7 @@ For full air-gapped deployment, you need to mirror these images to your registry
 ### Garage (S3 storage)
 ```bash
 # Load from tarball
-podman load -i 00-prepare/downloads/containers/garage-v1.0.1.tar
+podman load -i downloads/containers/garage-v1.0.1.tar
 
 # Tag and push to your registry
 podman tag dxflrs/garage:v1.0.1 <your-registry>/garage:v1.0.1
@@ -381,19 +373,19 @@ Then update the Garage deployment in `14-oadp/14-oadp.md` to use your registry.
 ## Troubleshooting
 
 ### RHEL9 image not found
-- Check: `00-prepare/downloads/images/`
+- Check: `downloads/images/`
 - Download manually from Red Hat portal
 - Place `.qcow2` file in the images directory
 
 ### Garage container load fails
 - Ensure podman is installed
-- Check: `00-prepare/downloads/containers/garage-*.tar`
+- Check: `downloads/containers/garage-*.tar`
 - Manually load: `podman load -i <tar-file>`
 
 ### Binary not executable
 ```bash
-chmod +x 00-prepare/downloads/binaries/mc
-chmod +x 10-node-exporter/node_exporter
+chmod +x downloads/binaries/mc
+chmod +x en/10-node-exporter/node_exporter
 ```
 
 ## Additional Notes
@@ -466,7 +458,7 @@ main() {
     print_ok "Distribution package ready: ${PACKAGE_NAME}.tar.gz"
     echo ""
     print_info "Transfer this file to your air-gapped bastion host and extract it."
-    print_info "See 00-prepare/README-AIRGAP.md for installation instructions."
+    print_info "See README-AIRGAP.md for installation instructions."
 }
 
 main "$@"

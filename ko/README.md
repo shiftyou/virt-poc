@@ -41,9 +41,9 @@ cd ko
 
 | 문서 | 설명 |
 |------|------|
-| [../00-prepare/README.md](../00-prepare/README.md) | Air-gapped 환경 준비 가이드 |
-| [../00-prepare/download.sh](../00-prepare/download.sh) | 필요 파일 다운로드 |
-| [../00-prepare/package.sh](../00-prepare/package.sh) | 배포 tarball 생성 |
+| [AIRGAP.md](../AIRGAP.md) | Air-gapped 환경 준비 가이드 |
+| [download.sh](../download.sh) | 필요 파일 다운로드 |
+| [package.sh](../package.sh) | 배포 tarball 생성 |
 
 ## Operator 설치 가이드
 

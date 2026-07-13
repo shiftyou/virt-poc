@@ -144,12 +144,12 @@ if [ "$ARG1" = "reset" ]; then
         \) -delete 2>/dev/null || true
 
     # Clean up downloaded files (optional - ask user)
-    if [ -d "../00-prepare/downloads" ]; then
+    if [ -d "../downloads" ]; then
         echo ""
-        echo -n -e "${YELLOW}  Remove downloaded files in ../00-prepare/downloads/? (y/N): ${NC}"
+        echo -n -e "${YELLOW}  Remove downloaded files in ../downloads/? (y/N): ${NC}"
         read -r confirm_downloads
         if [[ "$confirm_downloads" =~ ^[Yy]$ ]]; then
-            rm -rf ../00-prepare/downloads
+            rm -rf ../downloads
             print_ok "Downloaded files removed"
         else
             print_info "Downloaded files kept"

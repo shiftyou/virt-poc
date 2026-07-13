@@ -17,7 +17,7 @@ en/                              ← English (fully self-contained)
 ├── utils/common.sh
 ├── operators/                   ← Operator installation guides
 ├── sample/                      ← Sample YAML files
-├── 00-prepare/ ~ 21-upgrade/   ← All lab directories
+├── 01-template/ ~ 21-upgrade/  ← All lab directories
 └── EXECUTION-ORDER.md, RESET-vs-CLEANUP.md
 
 ko/                              ← Korean (fully self-contained)
@@ -28,11 +28,11 @@ ko/                              ← Korean (fully self-contained)
 ├── utils/common.sh
 ├── operators/
 ├── sample/
-├── 00-prepare/ ~ 21-upgrade/
+├── 01-template/ ~ 21-upgrade/
 └── EXECUTION-ORDER.md, RESET-vs-CLEANUP.md
 ```
 
-Root level keeps only: `CLAUDE.md`, `README.md`, `.gitignore`.
+Root level keeps: `CLAUDE.md`, `README.md`, `.gitignore`, `download.sh`, `package.sh`, `AIRGAP.md`.
 
 ### Conventions
 

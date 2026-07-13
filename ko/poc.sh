@@ -144,12 +144,12 @@ if [ "$ARG1" = "reset" ]; then
         \) -delete 2>/dev/null || true
 
     # 다운로드된 파일 정리 (선택 사항 - 사용자에게 확인)
-    if [ -d "../00-prepare/downloads" ]; then
+    if [ -d "../downloads" ]; then
         echo ""
-        echo -n -e "${YELLOW}  ../00-prepare/downloads/의 다운로드된 파일을 삭제하시겠습니까? (y/N): ${NC}"
+        echo -n -e "${YELLOW}  ../downloads/의 다운로드된 파일을 삭제하시겠습니까? (y/N): ${NC}"
         read -r confirm_downloads
         if [[ "$confirm_downloads" =~ ^[Yy]$ ]]; then
-            rm -rf ../00-prepare/downloads
+            rm -rf ../downloads
             print_ok "다운로드된 파일 삭제됨"
         else
             print_info "다운로드된 파일 유지됨"
