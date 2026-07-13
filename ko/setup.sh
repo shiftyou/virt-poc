@@ -413,28 +413,6 @@ print_info "  예) 192.168.100 → 02-network VM: .21, .22 / 03-vm: .31 / 05-net
 ask "Secondary NIC IP 프리픽스 (cloud-init networkData)" "192.168.100" SECONDARY_IP_PREFIX
 
 # =============================================================================
-# [13·14·16] Node — 노드 유지보수 / SNR / 노드 추가
-# =============================================================================
-print_step_header "[13·14·16]" "Node — 노드 유지보수 / SNR / 노드 추가"
-
-if check_oc 2>/dev/null; then
-    DETECTED_WORKERS=$(oc get nodes -l node-role.kubernetes.io/worker \
-        -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
-    if [ -n "$DETECTED_WORKERS" ]; then
-        print_info "감지된 워커 노드: $DETECTED_WORKERS"
-        FIRST_WORKER=$(echo $DETECTED_WORKERS | awk '{print $1}')
-    else
-        FIRST_WORKER="worker-0"
-    fi
-else
-    DETECTED_WORKERS=""
-    FIRST_WORKER="worker-0"
-fi
-
-ask "워커 노드 이름 목록 (공백으로 구분)" "${DETECTED_WORKERS:-worker-0 worker-1 worker-2}" WORKER_NODES
-ask "테스트에 사용할 노드 이름 (단일)" "${FIRST_WORKER:-worker-0}" TEST_NODE
-
-# =============================================================================
 # env.conf 저장
 # =============================================================================
 print_header "env.conf 저장 중..."
@@ -458,10 +436,6 @@ STORAGE_CLASS=${STORAGE_CLASS}
 
 # Golden Image URL (DataVolume HTTP import)
 GOLDEN_IMAGE_URL=${GOLDEN_IMAGE_URL}
-
-# 노드 정보
-WORKER_NODES="${WORKER_NODES}"
-TEST_NODE=${TEST_NODE}
 
 # Operator 설치 상태 (setup.sh 실행 시 자동 감지)
 VIRT_INSTALLED=${VIRT_INSTALLED:-false}

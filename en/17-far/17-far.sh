@@ -55,6 +55,10 @@ preflight() {
     load_or_ask FENCE_AGENT_USER "IPMI username" "admin"
     load_or_ask FENCE_AGENT_PASS "IPMI password" "password" "true"
 
+    detect_worker_nodes
+    NODE1="${TEST_NODE}"
+    print_ok "Target node: $NODE1"
+
     if [ -z "${FENCE_AGENT_IPS:-}" ]; then
         echo ""
         print_info "Enter the IPMI/BMC IP address for each worker node."
@@ -71,14 +75,7 @@ preflight() {
         save_to_env "FENCE_AGENT_PASS" "${FENCE_AGENT_PASS}"
     fi
 
-    NODE1="${TEST_NODE}"
     FENCE_AGENT_IP="${FENCE_AGENT_IPS%% *}"
-
-    if ! oc get node "$NODE1" &>/dev/null; then
-        print_error "Node $NODE1 not found. Please check TEST_NODE in env.conf."
-        exit 1
-    fi
-    print_ok "Target node: $NODE1"
 
     if [ -z "${FENCE_AGENT_IP:-}" ] || [ "${FENCE_AGENT_IP}" = "192.168.1.100" ]; then
         print_warn "FENCE_AGENT_IP is the default value. Please update FENCE_AGENT_IPS in env.conf with the actual BMC IP."

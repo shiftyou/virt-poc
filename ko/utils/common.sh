@@ -10,7 +10,7 @@
 # 제공 기능:
 #   색상 상수, print_info/ok/warn/error/step/header,
 #   ask(), save_to_env(), load_or_ask(),
-#   auto_detect_garage(), auto_detect_odf(),
+#   detect_worker_nodes(), auto_detect_garage(), auto_detect_odf(),
 #   confirm_and_apply()
 # =============================================================================
 
@@ -149,6 +149,22 @@ confirm_and_apply() {
         [[ "$confirm" != "y" && "$confirm" != "Y" ]] && { print_warn "취소됨."; return 1; }
     fi
     oc apply -f "$file"
+}
+
+# ---------------------------------------------------------------------------
+# detect_worker_nodes() — 클러스터에서 워커 노드 감지
+#   설정: WORKER_NODES (공백 구분), TEST_NODE (첫 번째 워커)
+# ---------------------------------------------------------------------------
+detect_worker_nodes() {
+    WORKER_NODES=$(oc get nodes -l node-role.kubernetes.io/worker \
+        -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true)
+    TEST_NODE=$(echo "$WORKER_NODES" | awk '{print $1}')
+
+    if [ -z "$WORKER_NODES" ]; then
+        print_error "워커 노드를 찾을 수 없습니다."
+        exit 1
+    fi
+    print_info "워커 노드: ${WORKER_NODES}"
 }
 
 # ---------------------------------------------------------------------------

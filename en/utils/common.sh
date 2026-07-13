@@ -10,7 +10,7 @@
 # Provides:
 #   Color constants, print_info/ok/warn/error/step/header,
 #   ask(), save_to_env(), load_or_ask(),
-#   auto_detect_garage(), auto_detect_odf(),
+#   detect_worker_nodes(), auto_detect_garage(), auto_detect_odf(),
 #   confirm_and_apply()
 # =============================================================================
 
@@ -149,6 +149,22 @@ confirm_and_apply() {
         [[ "$confirm" != "y" && "$confirm" != "Y" ]] && { print_warn "Cancelled."; return 1; }
     fi
     oc apply -f "$file"
+}
+
+# ---------------------------------------------------------------------------
+# detect_worker_nodes() — detect worker nodes from the cluster
+#   Sets: WORKER_NODES (space-separated), TEST_NODE (first worker)
+# ---------------------------------------------------------------------------
+detect_worker_nodes() {
+    WORKER_NODES=$(oc get nodes -l node-role.kubernetes.io/worker \
+        -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true)
+    TEST_NODE=$(echo "$WORKER_NODES" | awk '{print $1}')
+
+    if [ -z "$WORKER_NODES" ]; then
+        print_error "No worker nodes found."
+        exit 1
+    fi
+    print_info "Worker nodes: ${WORKER_NODES}"
 }
 
 # ---------------------------------------------------------------------------

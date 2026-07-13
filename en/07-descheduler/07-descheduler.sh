@@ -25,7 +25,6 @@ if [ -f "$ENV_FILE" ]; then
 fi
 
 NS="poc-descheduler"
-NODE1="${TEST_NODE}"           # Uses TEST_NODE from env.conf
 DESCHEDULER_NS="openshift-kube-descheduler-operator"
 
 # Initial VM CPU request (250m each)
@@ -68,10 +67,8 @@ preflight() {
     fi
     print_ok "poc Template confirmed"
 
-    if ! oc get node "$NODE1" &>/dev/null; then
-        print_error "Node $NODE1 not found. Check TEST_NODE in env.conf."
-        exit 1
-    fi
+    detect_worker_nodes
+    NODE1="${TEST_NODE}"
     print_ok "Target node: $NODE1"
 
     if [ "${VIRT_INSTALLED:-false}" != "true" ]; then

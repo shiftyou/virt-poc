@@ -25,7 +25,6 @@ if [ -f "$ENV_FILE" ]; then
 fi
 
 NS="poc-descheduler"
-NODE1="${TEST_NODE}"           # env.conf의 TEST_NODE 사용
 DESCHEDULER_NS="openshift-kube-descheduler-operator"
 
 # 초기 VM CPU request (각 250m)
@@ -68,10 +67,8 @@ preflight() {
     fi
     print_ok "poc Template 확인됨"
 
-    if ! oc get node "$NODE1" &>/dev/null; then
-        print_error "노드 $NODE1을(를) 찾을 수 없습니다. env.conf의 TEST_NODE를 확인하세요."
-        exit 1
-    fi
+    detect_worker_nodes
+    NODE1="${TEST_NODE}"
     print_ok "대상 노드: $NODE1"
 
     if [ "${VIRT_INSTALLED:-false}" != "true" ]; then

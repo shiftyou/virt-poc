@@ -21,7 +21,6 @@ if [ -f "$ENV_FILE" ]; then
 fi
 
 NS="poc-maintenance"
-NODE1="${TEST_NODE}"
 
 source "${SCRIPT_DIR}/../utils/common.sh"
 
@@ -59,10 +58,8 @@ preflight() {
     fi
     print_ok "poc Template confirmed"
 
-    if ! oc get node "$NODE1" &>/dev/null; then
-        print_error "Node $NODE1 not found. Please check TEST_NODE in env.conf."
-        exit 1
-    fi
+    detect_worker_nodes
+    NODE1="${TEST_NODE}"
     print_ok "Target node: $NODE1"
 
     if [ "${VIRT_INSTALLED:-false}" != "true" ]; then

@@ -413,28 +413,6 @@ print_info "  e.g.) 192.168.100 → 02-network VM: .21, .22 / 03-vm: .31 / 05-ne
 ask "Secondary NIC IP prefix (cloud-init networkData)" "192.168.100" SECONDARY_IP_PREFIX
 
 # =============================================================================
-# [13·14·16] Node — Node maintenance / SNR / Add Node
-# =============================================================================
-print_step_header "[13·14·16]" "Node — Node maintenance / SNR / Add Node"
-
-if check_oc 2>/dev/null; then
-    DETECTED_WORKERS=$(oc get nodes -l node-role.kubernetes.io/worker \
-        -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
-    if [ -n "$DETECTED_WORKERS" ]; then
-        print_info "Detected worker nodes: $DETECTED_WORKERS"
-        FIRST_WORKER=$(echo $DETECTED_WORKERS | awk '{print $1}')
-    else
-        FIRST_WORKER="worker-0"
-    fi
-else
-    DETECTED_WORKERS=""
-    FIRST_WORKER="worker-0"
-fi
-
-ask "Worker node name list (space-separated)" "${DETECTED_WORKERS:-worker-0 worker-1 worker-2}" WORKER_NODES
-ask "Single node name for testing" "${FIRST_WORKER:-worker-0}" TEST_NODE
-
-# =============================================================================
 # Save env.conf
 # =============================================================================
 print_header "Saving env.conf..."
@@ -458,10 +436,6 @@ STORAGE_CLASS=${STORAGE_CLASS}
 
 # Golden Image URL (DataVolume HTTP import)
 GOLDEN_IMAGE_URL=${GOLDEN_IMAGE_URL}
-
-# Node information
-WORKER_NODES="${WORKER_NODES}"
-TEST_NODE=${TEST_NODE}
 
 # Operator installation status (auto-detected when setup.sh runs)
 VIRT_INSTALLED=${VIRT_INSTALLED:-false}

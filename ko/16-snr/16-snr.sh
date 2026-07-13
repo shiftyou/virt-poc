@@ -22,7 +22,6 @@ fi
 
 NS="poc-snr"
 REMEDIATION_NS="openshift-workload-availability"
-NODE1="${TEST_NODE}"
 
 source "${SCRIPT_DIR}/../utils/common.sh"
 
@@ -74,10 +73,8 @@ preflight() {
     fi
     print_ok "poc Template 확인됨"
 
-    if ! oc get node "$NODE1" &>/dev/null; then
-        print_error "Node $NODE1을 찾을 수 없습니다. env.conf의 TEST_NODE를 확인하세요."
-        exit 1
-    fi
+    detect_worker_nodes
+    NODE1="${TEST_NODE}"
     print_ok "대상 노드: $NODE1"
 }
 

@@ -55,6 +55,10 @@ preflight() {
     load_or_ask FENCE_AGENT_USER "IPMI username" "admin"
     load_or_ask FENCE_AGENT_PASS "IPMI password" "password" "true"
 
+    detect_worker_nodes
+    NODE1="${TEST_NODE}"
+    print_ok "대상 노드: $NODE1"
+
     if [ -z "${FENCE_AGENT_IPS:-}" ]; then
         echo ""
         print_info "각 워커 노드의 IPMI/BMC IP 주소를 입력하세요."
@@ -71,14 +75,7 @@ preflight() {
         save_to_env "FENCE_AGENT_PASS" "${FENCE_AGENT_PASS}"
     fi
 
-    NODE1="${TEST_NODE}"
     FENCE_AGENT_IP="${FENCE_AGENT_IPS%% *}"
-
-    if ! oc get node "$NODE1" &>/dev/null; then
-        print_error "Node $NODE1을 찾을 수 없습니다. env.conf의 TEST_NODE를 확인하세요."
-        exit 1
-    fi
-    print_ok "대상 노드: $NODE1"
 
     if [ -z "${FENCE_AGENT_IP:-}" ] || [ "${FENCE_AGENT_IP}" = "192.168.1.100" ]; then
         print_warn "FENCE_AGENT_IP가 기본값입니다. env.conf의 FENCE_AGENT_IPS를 실제 BMC IP로 업데이트하세요."
