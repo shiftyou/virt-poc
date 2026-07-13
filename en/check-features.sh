@@ -9,7 +9,7 @@
 # Usage: ./check-features.sh [--verbose]
 # =============================================================================
 
-set -euo pipefail
+set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/env.conf"
@@ -93,9 +93,9 @@ preflight() {
     fi
 
     test_start "HyperConverged CR"
-    if oc get hco -n openshift-cnv kubevirt-hyperconverged &>/dev/null; then
+    if oc get hyperconverged kubevirt-hyperconverged -n openshift-cnv &>/dev/null; then
         local phase
-        phase=$(oc get hco -n openshift-cnv kubevirt-hyperconverged -o jsonpath='{.status.phase}')
+        phase=$(oc get hyperconverged kubevirt-hyperconverged -n openshift-cnv -o jsonpath='{.status.phase}')
         if [ "$phase" = "Deployed" ]; then
             test_pass "HyperConverged is Deployed"
         else
@@ -112,18 +112,18 @@ preflight() {
 check_template() {
     print_section "Lab 01: VM Template"
 
-    test_start "DataSource 'poc'"
-    if oc get datasource poc -n openshift-virtualization-os-images &>/dev/null; then
-        test_pass "DataSource 'poc' exists"
+    test_start "DataSource 'poc-golden'"
+    if oc get datasource poc-golden -n openshift-virtualization-os-images &>/dev/null; then
+        test_pass "DataSource 'poc-golden' exists"
     else
-        test_fail "DataSource 'poc' not found (run 01-template/01-template.sh)"
+        test_fail "DataSource 'poc-golden' not found (run 01-template/01-template.sh)"
     fi
 
     test_start "Template 'poc'"
-    if oc get template poc -n openshift-virtualization-os-images &>/dev/null; then
-        test_pass "Template 'poc' exists"
+    if oc get template poc -n openshift &>/dev/null; then
+        test_pass "Template 'poc' exists (namespace: openshift)"
     else
-        test_fail "Template 'poc' not found"
+        test_fail "Template 'poc' not found (namespace: openshift)"
     fi
 }
 
@@ -194,21 +194,24 @@ check_multitenancy() {
     print_section "Lab 04: Multitenancy"
 
     test_start "Tenant namespaces"
-    local tenant_ns
-    tenant_ns=$(oc get ns 2>/dev/null | grep -E "tenant-|poc-" | wc -l)
-    if [ "$tenant_ns" -gt 1 ]; then
-        test_pass "Multi-tenant namespaces: $tenant_ns found"
+    local tenant_count=0
+    oc get ns poc-multitenancy-1 &>/dev/null && tenant_count=$((tenant_count+1))
+    oc get ns poc-multitenancy-2 &>/dev/null && tenant_count=$((tenant_count+1))
+    if [ "$tenant_count" -eq 2 ]; then
+        test_pass "Multi-tenant namespaces: poc-multitenancy-1, poc-multitenancy-2"
+    elif [ "$tenant_count" -eq 1 ]; then
+        test_warn "Only 1 multi-tenant namespace found (2 expected)"
     else
-        test_warn "Less than 2 tenant namespaces found"
+        test_warn "No multi-tenant namespaces found (run 04-multitenancy)"
     fi
 
     test_start "RBAC configuration"
     local rb_count
-    rb_count=$(oc get rolebinding -A 2>/dev/null | grep -v NAMESPACE | wc -l)
+    rb_count=$(oc get rolebinding -n poc-multitenancy-1 -n poc-multitenancy-2 2>/dev/null | grep -E "user[1-4]" | wc -l)
     if [ "$rb_count" -gt 0 ]; then
-        test_pass "RoleBindings configured: $rb_count found"
+        test_pass "Multitenancy RoleBindings: $rb_count found"
     else
-        test_warn "No RoleBindings found"
+        test_warn "No multitenancy RoleBindings found"
     fi
 }
 
@@ -220,10 +223,10 @@ check_network_policy() {
 
     test_start "NetworkPolicies"
     local np_count
-    np_count=$(oc get networkpolicy -A 2>/dev/null | grep -v NAMESPACE | wc -l)
+    np_count=$(oc get networkpolicy -n poc-network-policy-1 -n poc-network-policy-2 2>/dev/null | grep -v NAME | wc -l)
     if [ "$np_count" -gt 0 ]; then
-        test_pass "NetworkPolicies: $np_count found"
-        [ "$VERBOSE" = "--verbose" ] && oc get networkpolicy -A
+        test_pass "NetworkPolicies: $np_count found (poc-network-policy-*)"
+        [ "$VERBOSE" = "--verbose" ] && oc get networkpolicy -n poc-network-policy-1 -n poc-network-policy-2
     else
         test_warn "No NetworkPolicies found (run 05-network-policy)"
     fi
@@ -236,13 +239,11 @@ check_resource_quota() {
     print_section "Lab 06: Resource Quota"
 
     test_start "ResourceQuotas"
-    local rq_count
-    rq_count=$(oc get resourcequota -A 2>/dev/null | grep -v NAMESPACE | wc -l)
-    if [ "$rq_count" -gt 0 ]; then
-        test_pass "ResourceQuotas: $rq_count found"
-        [ "$VERBOSE" = "--verbose" ] && oc get resourcequota -A
+    if oc get resourcequota -n poc-resource-quota 2>/dev/null | grep -q poc; then
+        test_pass "ResourceQuota found (poc-resource-quota)"
+        [ "$VERBOSE" = "--verbose" ] && oc get resourcequota -n poc-resource-quota
     else
-        test_warn "No ResourceQuotas found (run 06-resource-quota)"
+        test_warn "No ResourceQuota found (run 06-resource-quota)"
     fi
 }
 
@@ -418,7 +419,7 @@ check_hyperconverged() {
 
     test_start "CPU Overcommit ratio"
     local cpu_ratio
-    cpu_ratio=$(oc get hco -n openshift-cnv kubevirt-hyperconverged -o jsonpath='{.spec.resourceRequirements.vmiCPUAllocationRatio}' 2>/dev/null || echo "not set")
+    cpu_ratio=$(oc get hyperconverged kubevirt-hyperconverged -n openshift-cnv -o jsonpath='{.spec.resourceRequirements.vmiCPUAllocationRatio}' 2>/dev/null || echo "not set")
     if [ "$cpu_ratio" != "not set" ]; then
         test_pass "CPU allocation ratio: $cpu_ratio"
     else
@@ -427,7 +428,7 @@ check_hyperconverged() {
 
     test_start "Live Migration configuration"
     local migration_config
-    migration_config=$(oc get hco -n openshift-cnv kubevirt-hyperconverged -o jsonpath='{.spec.liveMigrationConfig}' 2>/dev/null)
+    migration_config=$(oc get hyperconverged kubevirt-hyperconverged -n openshift-cnv -o jsonpath='{.spec.liveMigrationConfig}' 2>/dev/null)
     if [ -n "$migration_config" ]; then
         test_pass "Live Migration configured"
     else

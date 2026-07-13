@@ -9,7 +9,7 @@
 # 사용법: ./check-features.sh [--verbose]
 # =============================================================================
 
-set -euo pipefail
+set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/env.conf"
@@ -93,9 +93,9 @@ preflight() {
     fi
 
     test_start "HyperConverged CR"
-    if oc get hco -n openshift-cnv kubevirt-hyperconverged &>/dev/null; then
+    if oc get hyperconverged kubevirt-hyperconverged -n openshift-cnv &>/dev/null; then
         local phase
-        phase=$(oc get hco -n openshift-cnv kubevirt-hyperconverged -o jsonpath='{.status.phase}')
+        phase=$(oc get hyperconverged kubevirt-hyperconverged -n openshift-cnv -o jsonpath='{.status.phase}')
         if [ "$phase" = "Deployed" ]; then
             test_pass "HyperConverged 배포 완료"
         else
@@ -112,18 +112,18 @@ preflight() {
 check_template() {
     print_section "Lab 01: VM Template"
 
-    test_start "DataSource 'poc'"
-    if oc get datasource poc -n openshift-virtualization-os-images &>/dev/null; then
-        test_pass "DataSource 'poc' 존재함"
+    test_start "DataSource 'poc-golden'"
+    if oc get datasource poc-golden -n openshift-virtualization-os-images &>/dev/null; then
+        test_pass "DataSource 'poc-golden' 존재함"
     else
-        test_fail "DataSource 'poc'을 찾을 수 없습니다 (01-template/01-template.sh 실행 필요)"
+        test_fail "DataSource 'poc-golden'을 찾을 수 없습니다 (01-template/01-template.sh 실행 필요)"
     fi
 
     test_start "Template 'poc'"
-    if oc get template poc -n openshift-virtualization-os-images &>/dev/null; then
-        test_pass "Template 'poc' 존재함"
+    if oc get template poc -n openshift &>/dev/null; then
+        test_pass "Template 'poc' 존재함 (namespace: openshift)"
     else
-        test_fail "Template 'poc'을 찾을 수 없습니다"
+        test_fail "Template 'poc'을 찾을 수 없습니다 (namespace: openshift)"
     fi
 }
 
@@ -194,21 +194,24 @@ check_multitenancy() {
     print_section "Lab 04: 멀티테넌시"
 
     test_start "테넌트 namespace"
-    local tenant_ns
-    tenant_ns=$(oc get ns 2>/dev/null | grep -E "tenant-|poc-" | wc -l)
-    if [ "$tenant_ns" -gt 1 ]; then
-        test_pass "멀티테넌트 namespace: ${tenant_ns}개 발견"
+    local ns1_exists ns2_exists tenant_count=0
+    oc get ns poc-multitenancy-1 &>/dev/null && tenant_count=$((tenant_count+1))
+    oc get ns poc-multitenancy-2 &>/dev/null && tenant_count=$((tenant_count+1))
+    if [ "$tenant_count" -eq 2 ]; then
+        test_pass "멀티테넌트 namespace: poc-multitenancy-1, poc-multitenancy-2"
+    elif [ "$tenant_count" -eq 1 ]; then
+        test_warn "멀티테넌트 namespace 1개만 발견 (2개 필요)"
     else
-        test_warn "테넌트 namespace가 2개 미만입니다"
+        test_warn "멀티테넌트 namespace를 찾을 수 없습니다 (04-multitenancy 실행 필요)"
     fi
 
     test_start "RBAC 설정"
     local rb_count
-    rb_count=$(oc get rolebinding -A 2>/dev/null | grep -v NAMESPACE | wc -l)
+    rb_count=$(oc get rolebinding -n poc-multitenancy-1 -n poc-multitenancy-2 2>/dev/null | grep -E "user[1-4]" | wc -l)
     if [ "$rb_count" -gt 0 ]; then
-        test_pass "RoleBinding 설정됨: ${rb_count}개 발견"
+        test_pass "멀티테넌시 RoleBinding: ${rb_count}개 발견"
     else
-        test_warn "RoleBinding을 찾을 수 없습니다"
+        test_warn "멀티테넌시 RoleBinding을 찾을 수 없습니다"
     fi
 }
 
@@ -220,10 +223,10 @@ check_network_policy() {
 
     test_start "NetworkPolicy"
     local np_count
-    np_count=$(oc get networkpolicy -A 2>/dev/null | grep -v NAMESPACE | wc -l)
+    np_count=$(oc get networkpolicy -n poc-network-policy-1 -n poc-network-policy-2 2>/dev/null | grep -v NAME | wc -l)
     if [ "$np_count" -gt 0 ]; then
-        test_pass "NetworkPolicy: ${np_count}개 발견"
-        [ "$VERBOSE" = "--verbose" ] && oc get networkpolicy -A
+        test_pass "NetworkPolicy: ${np_count}개 발견 (poc-network-policy-*)"
+        [ "$VERBOSE" = "--verbose" ] && oc get networkpolicy -n poc-network-policy-1 -n poc-network-policy-2
     else
         test_warn "NetworkPolicy를 찾을 수 없습니다 (05-network-policy 실행 필요)"
     fi
@@ -236,11 +239,9 @@ check_resource_quota() {
     print_section "Lab 06: Resource Quota"
 
     test_start "ResourceQuota"
-    local rq_count
-    rq_count=$(oc get resourcequota -A 2>/dev/null | grep -v NAMESPACE | wc -l)
-    if [ "$rq_count" -gt 0 ]; then
-        test_pass "ResourceQuota: ${rq_count}개 발견"
-        [ "$VERBOSE" = "--verbose" ] && oc get resourcequota -A
+    if oc get resourcequota -n poc-resource-quota 2>/dev/null | grep -q poc; then
+        test_pass "ResourceQuota 발견 (poc-resource-quota)"
+        [ "$VERBOSE" = "--verbose" ] && oc get resourcequota -n poc-resource-quota
     else
         test_warn "ResourceQuota를 찾을 수 없습니다 (06-resource-quota 실행 필요)"
     fi
@@ -418,7 +419,7 @@ check_hyperconverged() {
 
     test_start "CPU Overcommit 비율"
     local cpu_ratio
-    cpu_ratio=$(oc get hco -n openshift-cnv kubevirt-hyperconverged -o jsonpath='{.spec.resourceRequirements.vmiCPUAllocationRatio}' 2>/dev/null || echo "미설정")
+    cpu_ratio=$(oc get hyperconverged kubevirt-hyperconverged -n openshift-cnv -o jsonpath='{.spec.resourceRequirements.vmiCPUAllocationRatio}' 2>/dev/null || echo "미설정")
     if [ "$cpu_ratio" != "미설정" ]; then
         test_pass "CPU 할당 비율: $cpu_ratio"
     else
@@ -427,7 +428,7 @@ check_hyperconverged() {
 
     test_start "Live Migration 설정"
     local migration_config
-    migration_config=$(oc get hco -n openshift-cnv kubevirt-hyperconverged -o jsonpath='{.spec.liveMigrationConfig}' 2>/dev/null)
+    migration_config=$(oc get hyperconverged kubevirt-hyperconverged -n openshift-cnv -o jsonpath='{.spec.liveMigrationConfig}' 2>/dev/null)
     if [ -n "$migration_config" ]; then
         test_pass "Live Migration 설정됨"
     else
