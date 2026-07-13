@@ -4,10 +4,10 @@ env.conf
 # VM 이미지 파일 (용량이 크므로 git 관리 제외)
 *.qcow2
 
-# 번호 디렉토리 내 스크립트 실행 결과물 yaml (20-upgrade 제외)
+# 번호 디렉토리 내 스크립트 실행 결과물 yaml (21-upgrade 제외)
 [0-9][0-9]-*/*.yaml
 [0-9][0-9]-*/*.json
-!20-upgrade/*.yaml
+!21-upgrade/*.yaml
 
 # macOS
 .DS_Store
