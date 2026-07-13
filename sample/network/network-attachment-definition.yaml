@@ -1,0 +1,20 @@
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  annotations:
+    k8s.ovn.org/network-id: '1'
+    k8s.ovn.org/network-name: localnet1
+  name: vlan10
+  namespace: poscodx4
+spec:
+  config: |-
+    {
+            "cniVersion": "0.3.1", 
+            "name": "localnet1", 
+            "type": "ovn-k8s-cni-overlay", 
+            "topology":"localnet", 
+            "mtu": 1300, 
+            "vlanID": 10,
+            "netAttachDefName": "poscodx4/vlan10" 
+    }
+

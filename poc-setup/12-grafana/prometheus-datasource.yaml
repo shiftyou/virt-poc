@@ -1,0 +1,21 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: prometheus-datasource
+  namespace: poc-monitoring
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: poc-grafana
+  datasource:
+    name: Prometheus
+    type: prometheus
+    access: proxy
+    url: https://thanos-querier.openshift-monitoring.svc.cluster.local:9091
+    isDefault: true
+    jsonData:
+      httpHeaderName1: Authorization
+      timeInterval: 5s
+      tlsSkipVerify: true
+    secureJsonData:
+      httpHeaderValue1: Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6IlQzQjBFQTFCNkV2a2hXUEh2NUMzWEp4dHQxeVBLZEtFbklsRDdlNUd1azAifQ.eyJhdWQiOlsiaHR0cHM6Ly9rdWJlcm5ldGVzLmRlZmF1bHQuc3ZjIl0sImV4cCI6MTgxMDQwMzAyMywiaWF0IjoxNzc4ODY3MDIzLCJpc3MiOiJodHRwczovL2t1YmVybmV0ZXMuZGVmYXVsdC5zdmMiLCJqdGkiOiI4YmNhM2EyNy1kYTE1LTQ2OGItYmFjMi01NTA0NGQzZjkzOGMiLCJrdWJlcm5ldGVzLmlvIjp7Im5hbWVzcGFjZSI6InBvYy1tb25pdG9yaW5nIiwic2VydmljZWFjY291bnQiOnsibmFtZSI6InBvYy1ncmFmYW5hLXNhIiwidWlkIjoiZTdkOWEyNjItYmZlNi00YzFlLThkZGEtN2U5MjFiOWU3M2NkIn19LCJuYmYiOjE3Nzg4NjcwMjMsInN1YiI6InN5c3RlbTpzZXJ2aWNlYWNjb3VudDpwb2MtbW9uaXRvcmluZzpwb2MtZ3JhZmFuYS1zYSJ9.mcVb_sTmojdZovRuXpgHmbnHEnIL8xcDPYhWBXNDYLo0hLjYWi3byLRVTwy0qxBKnLE56fa-Y5hYFdzbZjnGdqlJgBaKoEI51hMo933--5DYT99NJvAwkI_uPRfSHWLMyxUGoIm7TLtcdFcxJI430GqscMJczFBCM650bLGsTKs8SeozVgzzc918RI4ujAVl4NpoPBqmJQoMeIcyZjJRmYIVxFz1n59zxYDEe_tNHeThmL1fS6bMlfaW-qMS5Z6ucMM0drbWOT5MCJkrYWqMdqkNvVceRpld5Z4QtZhb0h8NrUel54iS3OOjyve9qo-SrR2Deyfklp_X_sklCW4aQ6cd4yDfk2rze-Bt6TapmdNlk68RSEILJ08c9Yyep-IdeFGvaQoGHkhhFqp2FW9Xdic8nPuIM0cEWqzciB-6M35mV54XKQqaY94UEYubrYHruk9mMrr-X_n7DtblwHjQpLm0hzWmfqaAVRvAc--HPIfje3Jf04zd-712j5T4LUdO6xk_lPw9ZCjk9Ku0SMJkvhIi9MY6gvNQJEiv_ib8Qx3XtvDcTZjtbk7Ez4IyNjxGA2-EsxeVE35-xufDdySbTugQxmoaXvXSLUY-dIhNJt2LKs1aDrkVp9kGsnk48p_6JJz5niTjjM_NoWrr3j9M5L8L7aIPw3noRYxOLIDuKz4

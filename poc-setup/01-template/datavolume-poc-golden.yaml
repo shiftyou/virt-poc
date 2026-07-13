@@ -1,0 +1,23 @@
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  annotations:
+    cdi.kubevirt.io/storage.bind.immediate.requested: 'true'
+    cdi.kubevirt.io/storage.usePopulator: 'true'
+  name: poc-golden
+  namespace: openshift-virtualization-os-images
+  labels:
+    instancetype.kubevirt.io/default-preference: rhel.9
+    instancetype.kubevirt.io/default-preference-kind: VirtualMachineClusterPreference
+spec:
+  source:
+    http:
+      url: 'http://146.56.160.95/poc-golden.qcow2'
+  storage:
+    accessModes:
+      - ReadWriteMany
+    resources:
+      requests:
+        storage: 30Gi
+    storageClassName: ocs-external-storagecluster-ceph-rbd
+    volumeMode: Block

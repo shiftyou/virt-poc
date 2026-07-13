@@ -1,0 +1,17 @@
+apiVersion: velero.io/v1
+kind: BackupStorageLocation
+metadata:
+  name: default
+spec:
+  provider: aws
+  objectStorage:
+    bucket: bucket
+    prefix: oadp
+  config:
+    region: minio
+    s3Url: http://route-object-store-s3-api-aistor-primary.apps.ocp419.poscodx.com
+    s3ForcePathStyle: "true"
+  credential:
+    name: cloud-credentials
+    key: cloud
+

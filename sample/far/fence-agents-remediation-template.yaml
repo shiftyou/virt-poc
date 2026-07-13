@@ -1,0 +1,29 @@
+apiVersion: fence-agents-remediation.medik8s.io/v1alpha1
+kind: FenceAgentsRemediationTemplate
+metadata:
+  annotations:
+    remediation.medik8s.io/multiple-templates-support: "true"
+  name: fenceagentsremediationtemplate-default
+  namespace: openshift-workload-availability
+spec:
+  template:
+    spec:
+      agent: fence_ipmilan
+      nodeSecretNames:
+        worker01.ocp419.poscodx.com: fence-agents-credentials-worker01
+        worker02.ocp419.poscodx.com: fence-agents-credentials-worker02
+        worker03.ocp419.poscodx.com: fence-agents-credentials-worker03
+      nodeparameters:
+        --ip:
+          worker01.ocp419.poscodx.com: 172.16.135.102
+          worker02.ocp419.poscodx.com: 172.16.135.103
+          worker03.ocp419.poscodx.com: 172.16.135.104
+      remediationStrategy: ResourceDeletion
+      retrycount: 5
+      retryinterval: 5s
+      sharedSecretName: fence-agents-credentials-shared
+      sharedparameters:
+        --action: reboot
+        --lanplus: ""
+        --username: admin
+      timeout: 1m0s

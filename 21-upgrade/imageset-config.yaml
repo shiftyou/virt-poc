@@ -1,0 +1,27 @@
+# =============================================================================
+# oc-mirror v2 imageset configuration file
+# Image mirroring for OpenShift 4.20 → 4.21 upgrade
+#
+# Usage:
+#   oc mirror --config=imageset-config.yaml \
+#     --workspace file:///mnt/mirror \
+#     docker://REGISTRY_HOST/ocp4
+#
+# REGISTRY_HOST: Internal registry address (e.g., registry.example.com)
+# =============================================================================
+
+apiVersion: mirror.openshift.io/v2alpha1
+kind: ImageSetConfiguration
+
+mirror:
+  platform:
+    # graph: true → also mirror the upgrade graph data image
+    # UpdateService (OSUS) uses this image to provide upgrade paths
+    graph: true
+    channels:
+      - name: stable-4.21
+        # Include upgrade path from current version (4.20.x) to target version (4.21.x)
+        minVersion: 4.20.0
+        maxVersion: 4.21.99
+        # shortestPath: mirror only the shortest upgrade path (saves storage)
+        shortestPath: true

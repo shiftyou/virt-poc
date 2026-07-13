@@ -1,0 +1,32 @@
+apiVersion: oadp.openshift.io/v1alpha1
+kind: DataProtectionApplication
+metadata:
+  name: dpa-sample
+  namespace: openshift-adp
+spec:
+  backupLocations:
+  - velero:
+      config:
+        region: minio
+        s3ForcePathStyle: "true"
+        s3Url: http://route-object-store-s3-api-aistor-primary.apps.ocp419.poscodx.com
+      credential:
+        key: cloud
+        name: cloud-credentials
+      default: true
+      objectStorage:
+        bucket: bucket
+        prefix: oadp
+      provider: aws
+  configuration:
+    nodeAgent:
+      enable: true
+      uploaderType: restic
+    velero:
+      defaultPlugins:
+      - aws
+      - openshift
+      - kubevirt
+      - csi
+      disableFsBackup: false
+  logFormat: text
