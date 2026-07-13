@@ -406,6 +406,13 @@ check_node_management() {
         test_blocked "Node Maintenance Operator not installed"
     fi
 
+    test_start "Node Health Check Operator"
+    if echo "$CSV_CACHE" | grep -qi "node-healthcheck"; then
+        test_pass "NHC Operator installed"
+    else
+        test_blocked "NHC Operator not installed"
+    fi
+
     test_start "Self Node Remediation Operator"
     if echo "$CSV_CACHE" | grep -qi "self-node-remediation"; then
         test_pass "SNR Operator installed"
