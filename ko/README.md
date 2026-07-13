@@ -7,7 +7,7 @@ OpenShift Virtualization POC — Air-gapped 환경을 위한 자동화 스크립
 ```bash
 cd ko
 ./setup.sh          # 환경 설정 (env.conf 생성)
-./run.sh start     # 전체 Lab 실행 (01-21)
+./poc.sh start     # 전체 Lab 실행 (01-21)
 ./check-features.sh # 기능 검증
 ```
 

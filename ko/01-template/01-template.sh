@@ -28,6 +28,7 @@ TEMPLATE_NS="openshift"
 DISK_SIZE="30Gi"
 STORAGE_CLASS="${STORAGE_CLASS}"
 GOLDEN_IMAGE_URL="${GOLDEN_IMAGE_URL:-http://krssa.ddns.net/vm-images/rhel9-poc-golden.qcow2}"
+GOLDEN_IMAGE_LOCAL="${GOLDEN_IMAGE_LOCAL:-}"
 
 source "${SCRIPT_DIR}/../utils/common.sh"
 
@@ -65,10 +66,10 @@ preflight() {
 }
 
 # =============================================================================
-# Step 1: DataVolume 생성 (HTTP URL import)
+# Step 1: DataVolume 생성 (로컬 업로드 또는 HTTP URL import)
 # =============================================================================
 step_datavolume() {
-    print_step "1/4  DataVolume 생성 (poc-golden, HTTP import)"
+    print_step "1/4  DataVolume 생성 (poc-golden)"
 
     local phase
     phase=$(oc get dv "$DV_NAME" -n "$TARGET_NS" \
@@ -83,9 +84,66 @@ step_datavolume() {
         oc delete pvc "$DV_NAME" -n "$TARGET_NS" --ignore-not-found
     fi
 
-    print_info "DataVolume 생성 URL: ${GOLDEN_IMAGE_URL}"
+    local local_qcow2=""
+    local url_filename
+    url_filename=$(basename "$GOLDEN_IMAGE_URL")
 
-    cat > datavolume-poc-golden.yaml <<EOF
+    local base_dir
+    base_dir="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+    print_info "로컬 파일 확인: ${base_dir}/${url_filename}"
+    print_info "로컬 파일 확인: $(pwd)/${url_filename}"
+
+    if [ -n "$GOLDEN_IMAGE_LOCAL" ] && [ -f "$GOLDEN_IMAGE_LOCAL" ]; then
+        local_qcow2="$(cd "$(dirname "$GOLDEN_IMAGE_LOCAL")" && pwd)/$(basename "$GOLDEN_IMAGE_LOCAL")"
+    elif [ -f "${base_dir}/${url_filename}" ]; then
+        local_qcow2="${base_dir}/${url_filename}"
+    elif [ -f "$(pwd)/${url_filename}" ]; then
+        local_qcow2="$(pwd)/${url_filename}"
+    fi
+
+    if [ -n "$local_qcow2" ]; then
+        print_info "로컬 파일 발견: ${local_qcow2} — virtctl 업로드 사용"
+
+        cat > datavolume-poc-golden.yaml <<EOF
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  annotations:
+    cdi.kubevirt.io/storage.bind.immediate.requested: 'true'
+    cdi.kubevirt.io/storage.usePopulator: 'true'
+  name: ${DV_NAME}
+  namespace: ${TARGET_NS}
+  labels:
+    instancetype.kubevirt.io/default-preference: rhel.9
+    instancetype.kubevirt.io/default-preference-kind: VirtualMachineClusterPreference
+spec:
+  source:
+    upload: {}
+  storage:
+    accessModes:
+      - ReadWriteMany
+    resources:
+      requests:
+        storage: ${DISK_SIZE}
+    storageClassName: ${STORAGE_CLASS}
+    volumeMode: Block
+EOF
+        echo "생성된 파일: datavolume-poc-golden.yaml"
+        oc apply -f datavolume-poc-golden.yaml
+
+        print_info "${local_qcow2} 파일을 virtctl image-upload로 업로드 중..."
+        virtctl image-upload dv "$DV_NAME" \
+            --image-path="$local_qcow2" \
+            --namespace="$TARGET_NS" \
+            --no-create \
+            --insecure
+        print_ok "DataVolume $DV_NAME 생성됨 (로컬 업로드 완료)"
+    else
+        print_info "로컬 파일 없음 (${url_filename}) — HTTP import 사용"
+        print_info "DataVolume 생성 URL: ${GOLDEN_IMAGE_URL}"
+
+        cat > datavolume-poc-golden.yaml <<EOF
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: DataVolume
 metadata:
@@ -110,9 +168,10 @@ spec:
     storageClassName: ${STORAGE_CLASS}
     volumeMode: Block
 EOF
-    echo "생성된 파일: datavolume-poc-golden.yaml"
-    oc apply -f datavolume-poc-golden.yaml
-    print_ok "DataVolume $DV_NAME 생성됨 (HTTP import 진행 중)"
+        echo "생성된 파일: datavolume-poc-golden.yaml"
+        oc apply -f datavolume-poc-golden.yaml
+        print_ok "DataVolume $DV_NAME 생성됨 (HTTP import 진행 중)"
+    fi
 }
 
 # =============================================================================
@@ -141,7 +200,7 @@ EOF
     print_ok "DataSource $DS_NAME 생성됨"
 
     # DataSource 존재 확인 후 PVC Bound 대기
-    print_info "PVC $DV_NAME이 Bound 상태가 되기를 대기 중 (HTTP import 진행 중)..."
+    print_info "PVC $DV_NAME이 Bound 상태가 되기를 대기 중..."
     local pvc_phase dv_phase progress
     while true; do
         pvc_phase=$(oc get pvc "$DV_NAME" -n "$TARGET_NS" \
@@ -382,7 +441,11 @@ main() {
     echo -e "${CYAN}  POC Golden Image → Template 등록${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
-    preflight "${1:-}"
+    if [ -n "${1:-}" ] && [ -f "${1:-}" ]; then
+        GOLDEN_IMAGE_LOCAL="$1"
+    fi
+
+    preflight
 
     step_datavolume
     step_datasource

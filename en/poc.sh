@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# run.sh
+# poc.sh
 #
 # Runs the .sh files in numbered directories (01-, 02-, ...) in order.
 # Run setup.sh first to generate env.conf.
@@ -9,11 +9,11 @@
 #         03-vm-workload/03-vm-workload.sh
 #
 # Usage:
-#   ./run.sh            Print usage
-#   ./run.sh start      Run all steps
-#   ./run.sh 7          Run only step 07
-#   ./run.sh from 7     Run from step 07 to the end
-#   ./run.sh reset      Delete all poc- namespaces
+#   ./poc.sh            Print usage
+#   ./poc.sh start      Run all steps
+#   ./poc.sh 7          Run only step 07
+#   ./poc.sh from 7     Run from step 07 to the end
+#   ./poc.sh reset      Delete all poc- namespaces
 # =============================================================================
 
 set -euo pipefail
@@ -38,16 +38,17 @@ ARG2="${2:-}"
 if [ -z "$ARG1" ]; then
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${CYAN}  virt-poc run.sh${NC}"
+    echo -e "${CYAN}  virt-poc poc.sh${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     echo -e "  Usage:"
-    echo -e "    ${CYAN}./run.sh start${NC}        Run all steps"
-    echo -e "    ${CYAN}./run.sh 7${NC}            Run only step 07"
-    echo -e "    ${CYAN}./run.sh from 7${NC}       Run from step 07 to the end"
-    echo -e "    ${CYAN}./run.sh reset${NC}        Delete poc- namespaces + generated files"
-    echo -e "    ${CYAN}./run.sh cleanup${NC}      Run --cleanup for each step in reverse order"
-    echo -e "    ${CYAN}./run.sh cleanup 7${NC}    Run --cleanup for step 07 only"
+    echo -e "    ${CYAN}./poc.sh start${NC}        Run all steps"
+    echo -e "    ${CYAN}./poc.sh 7${NC}            Run only step 07"
+    echo -e "    ${CYAN}./poc.sh from 7${NC}       Run from step 07 to the end"
+    echo -e "    ${CYAN}./poc.sh status${NC}       Show lab completion status"
+    echo -e "    ${CYAN}./poc.sh reset${NC}        Delete poc- namespaces + generated files"
+    echo -e "    ${CYAN}./poc.sh cleanup${NC}      Run --cleanup for each step in reverse order"
+    echo -e "    ${CYAN}./poc.sh cleanup 7${NC}    Run --cleanup for step 07 only"
     echo ""
     exit 0
 fi
@@ -71,7 +72,7 @@ if [ "$ARG1" = "reset" ]; then
 
     echo ""
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}  run.sh reset — Deleting the following namespaces${NC}"
+    echo -e "${YELLOW}  poc.sh reset — Deleting the following namespaces${NC}"
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     echo "$NAMESPACES" | while read -r ns; do
@@ -210,7 +211,7 @@ if [ "$ARG1" = "cleanup" ]; then
 
     echo ""
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}  run.sh cleanup — Running --cleanup for all steps${NC}"
+    echo -e "${YELLOW}  poc.sh cleanup — Running --cleanup for all steps${NC}"
     echo -e "${YELLOW}  Deletes resources created by each script in reverse order.${NC}"
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
@@ -243,6 +244,164 @@ if [ "$ARG1" = "cleanup" ]; then
     exit 0
 fi
 
+# =============================================================================
+# status subcommand
+# =============================================================================
+if [ "$ARG1" = "status" ]; then
+    if [ ! -f "$ENV_FILE" ]; then
+        print_error "env.conf not found. Please run setup.sh first."
+        exit 1
+    fi
+    set -a; source "$ENV_FILE"; set +a
+
+    if ! oc whoami &>/dev/null; then
+        print_error "Not logged into OpenShift."
+        exit 1
+    fi
+
+    check_ns()       { oc get ns "$1" &>/dev/null; }
+    check_resource() { oc get "$1" "$2" -n "$3" &>/dev/null; }
+
+    lab_status() {
+        case "$1" in
+            01) check_resource template poc openshift ;;
+            02) check_ns poc-network ;;
+            03) check_ns poc-vm ;;
+            04) check_ns poc-multitenancy-1 ;;
+            05) check_ns poc-network-policy-1 ;;
+            06) check_ns poc-resource-quota ;;
+            07) check_ns poc-descheduler ;;
+            08) check_ns poc-liveness-probe ;;
+            09) check_ns poc-alert ;;
+            10) check_ns poc-node-exporter ;;
+            11) check_resource monitoringstack poc-monitoring-stack poc-monitoring 2>/dev/null ;;
+            12) check_resource grafana poc-grafana poc-monitoring 2>/dev/null ;;
+            13) check_ns poc-mtv ;;
+            14) check_ns poc-oadp ;;
+            15) check_ns poc-maintenance ;;
+            16) check_ns poc-snr ;;
+            17) check_ns poc-far ;;
+            18) return 2 ;;
+            19) return 2 ;;
+            20) check_resource lokistack logging-loki openshift-logging 2>/dev/null ;;
+            21) return 2 ;;
+            *)  return 1 ;;
+        esac
+    }
+
+    lab_operators() {
+        case "$1" in
+            01) echo "VIRT:${VIRT_INSTALLED:-false}" ;;
+            02) echo "NMSTATE:${NMSTATE_INSTALLED:-false}" ;;
+            03|04|05|06|08|10) echo "VIRT:${VIRT_INSTALLED:-false}" ;;
+            07) echo "VIRT:${VIRT_INSTALLED:-false} DESCHEDULER:${DESCHEDULER_INSTALLED:-false}" ;;
+            09) echo "" ;;
+            11) echo "COO:${COO_INSTALLED:-false}" ;;
+            12) echo "GRAFANA:${GRAFANA_INSTALLED:-false}" ;;
+            13) echo "MTV:${MTV_INSTALLED:-false}" ;;
+            14) echo "OADP:${OADP_INSTALLED:-false}" ;;
+            15) echo "VIRT:${VIRT_INSTALLED:-false} NMO:${NMO_INSTALLED:-false}" ;;
+            16) echo "SNR:${SNR_INSTALLED:-false} NHC:${NHC_INSTALLED:-false}" ;;
+            17) echo "FAR:${FAR_INSTALLED:-false} NHC:${NHC_INSTALLED:-false}" ;;
+            18|19|21) echo "" ;;
+            20) echo "LOGGING:${LOGGING_INSTALLED:-false} LOKI:${LOKI_INSTALLED:-false}" ;;
+            *)  echo "" ;;
+        esac
+    }
+
+    operators_ok() {
+        local ops="$1"
+        [ -z "$ops" ] && return 0
+        for pair in $ops; do
+            local val="${pair#*:}"
+            [ "$val" != "true" ] && return 1
+        done
+        return 0
+    }
+
+    format_operators() {
+        local ops="$1"
+        [ -z "$ops" ] && { echo "—"; return; }
+        local result=""
+        for pair in $ops; do
+            local name="${pair%%:*}" val="${pair#*:}"
+            if [ "$val" = "true" ]; then
+                result+="${GREEN}${name}${NC} "
+            else
+                result+="${RED}${name}${NC} "
+            fi
+        done
+        echo -e "$result"
+    }
+
+    step_desc() {
+        case "$1" in
+            01) echo "Template Registration" ;;
+            02) echo "Secondary Network" ;;
+            03) echo "VM Workload" ;;
+            04) echo "Multi-tenancy" ;;
+            05) echo "NetworkPolicy" ;;
+            06) echo "ResourceQuota" ;;
+            07) echo "Descheduler" ;;
+            08) echo "Liveness Probe" ;;
+            09) echo "VM Alert" ;;
+            10) echo "Node Exporter" ;;
+            11) echo "COO MonitoringStack" ;;
+            12) echo "Grafana Dashboard" ;;
+            13) echo "MTV Migration" ;;
+            14) echo "OADP Backup/Restore" ;;
+            15) echo "Node Maintenance" ;;
+            16) echo "SNR Self-Recovery" ;;
+            17) echo "FAR Fence Agent" ;;
+            18) echo "Add/Remove Node" ;;
+            19) echo "HyperConverged Config" ;;
+            20) echo "Audit Logging" ;;
+            21) echo "Airgap Upgrade" ;;
+            *)  echo "$1" ;;
+        esac
+    }
+
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}  virt-poc Lab Status${NC}   $(oc whoami) @ $(oc whoami --show-server)"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    printf "  ${CYAN}%-4s %-24s %-20s %s${NC}\n" "Lab" "Description" "Status" "Operators"
+    echo "  ──────────────────────────────────────────────────────────────────────"
+
+    DONE=0 NOT_DONE=0 SKIP=0 NA=0
+    for num in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21; do
+        dir_exists=$(find "$SCRIPT_DIR" -maxdepth 1 -type d -name "${num}-*" 2>/dev/null | head -1)
+        [ -z "$dir_exists" ] && continue
+
+        desc=$(step_desc "$num")
+        ops=$(lab_operators "$num")
+        ops_fmt=$(format_operators "$ops")
+
+        lab_status "$num" && rc=0 || rc=$?
+
+        if [ $rc -eq 2 ]; then
+            printf "  %-4s %-24s ${DIM}%-20s${NC} %b\n" "$num" "$desc" "—  N/A" "$ops_fmt"
+            NA=$((NA+1))
+        elif ! operators_ok "$ops"; then
+            printf "  %-4s %-24s ${YELLOW}%-20s${NC} %b\n" "$num" "$desc" "⚠  Operator N/A" "$ops_fmt"
+            SKIP=$((SKIP+1))
+        elif [ $rc -eq 0 ]; then
+            printf "  %-4s %-24s ${GREEN}%-20s${NC} %b\n" "$num" "$desc" "✔  Done" "$ops_fmt"
+            DONE=$((DONE+1))
+        else
+            printf "  %-4s %-24s ${DIM}%-20s${NC} %b\n" "$num" "$desc" "·  Not done" "$ops_fmt"
+            NOT_DONE=$((NOT_DONE+1))
+        fi
+    done
+
+    echo "  ──────────────────────────────────────────────────────────────────────"
+    printf "  Done: ${GREEN}%d${NC}  Not done: %d  Operator N/A: ${YELLOW}%d${NC}  N/A: %d\n" \
+        "$DONE" "$NOT_DONE" "$SKIP" "$NA"
+    echo ""
+    exit 0
+fi
+
 # Check and load env.conf
 if [ ! -f "$ENV_FILE" ]; then
     print_error "env.conf not found. Please run setup.sh first."
@@ -267,7 +426,7 @@ elif [[ "$ARG1" =~ ^[0-9]+$ ]]; then
     START_NUM=$(printf "%02d" "$ARG1")
 elif [ "$ARG1" != "start" ]; then
     print_error "Unknown argument: $ARG1"
-    echo -e "  Run ${CYAN}./run.sh${NC} to see usage."
+    echo -e "  Run ${CYAN}./poc.sh${NC} to see usage."
     exit 1
 fi
 

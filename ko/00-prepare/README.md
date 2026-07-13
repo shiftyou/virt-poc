@@ -84,7 +84,7 @@ cd ..
 ### 5. 전체 Lab 실행
 
 ```bash
-./run.sh
+./poc.sh
 ```
 
 또는 개별 Lab 실행:

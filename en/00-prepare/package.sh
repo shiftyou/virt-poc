@@ -229,7 +229,7 @@ main() {
     print_info "Next steps:"
     echo "  1. Review env.conf settings"
     echo "  2. Run: ./setup.sh"
-    echo "  3. Run: ./run.sh"
+    echo "  3. Run: ./poc.sh"
     echo ""
     print_info "For RHEL9 image upload:"
     echo "  cd 01-template"
@@ -340,7 +340,7 @@ virt-poc/
 
 5. **Run all labs**
    ```bash
-   ./run.sh
+   ./poc.sh
    ```
    Or run individual labs:
    ```bash
