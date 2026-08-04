@@ -275,7 +275,7 @@ if [ "$ARG1" = "status" ]; then
             09) check_ns poc-alert ;;
             10) check_ns poc-node-exporter ;;
             11) check_resource monitoringstack poc-monitoring-stack poc-monitoring 2>/dev/null ;;
-            12) check_resource grafana poc-grafana poc-monitoring 2>/dev/null ;;
+            12) check_resource configmap poc-vm-overview-dashboard openshift-config-managed 2>/dev/null ;;
             13) check_ns poc-mtv ;;
             14) check_ns poc-oadp ;;
             15) check_ns poc-maintenance ;;
@@ -297,7 +297,7 @@ if [ "$ARG1" = "status" ]; then
             07) echo "VIRT:${VIRT_INSTALLED:-false} DESCHEDULER:${DESCHEDULER_INSTALLED:-false}" ;;
             09) echo "" ;;
             11) echo "COO:${COO_INSTALLED:-false}" ;;
-            12) echo "GRAFANA:${GRAFANA_INSTALLED:-false}" ;;
+            12) echo "" ;;
             13) echo "MTV:${MTV_INSTALLED:-false}" ;;
             14) echo "OADP:${OADP_INSTALLED:-false}" ;;
             15) echo "VIRT:${VIRT_INSTALLED:-false} NMO:${NMO_INSTALLED:-false}" ;;
@@ -509,7 +509,7 @@ step_desc() {
         09-alert)            echo "VM Alert — PrometheusRule 알림" ;;
         10-node-exporter)    echo "Node Exporter — 커스텀 메트릭 수집" ;;
         11-coo)              echo "COO — Cluster Observability Operator MonitoringStack + VM node_exporter" ;;
-        12-grafana)          echo "Grafana — Grafana Operator + OpenShift Prometheus datasource + OCP-V 대시보드" ;;
+        12-grafana)          echo "Grafana — OpenShift 콘솔 내장 대시보드 (Operator 불필요)" ;;
         13-mtv)              echo "MTV — VMware → OpenShift 마이그레이션 (Operator 필요)" ;;
         14-oadp)             echo "OADP — VM 백업/복원 (Operator 필요)" ;;
         15-node-maintenance) echo "노드 유지보수 — 노드 유지보수 시 VM Live Migration (Operator 필요)" ;;

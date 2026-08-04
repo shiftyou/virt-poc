@@ -1,167 +1,61 @@
-# Grafana Operator + OpenShift Prometheus DataSource + Dashboards
+# OpenShift Console Built-in Monitoring Dashboards (No Grafana Operator)
 
-Deploy Grafana via the Grafana Operator, integrate with OpenShift built-in Prometheus, and deploy two dashboards for OpenShift Virtualization monitoring.
+Register custom OpenShift Virtualization dashboards directly into the OpenShift web console's built-in **Observe → Dashboards** view — no Grafana Operator, Grafana instance, or Route required.
 
 ---
 
 ## Overview
 
+The OpenShift web console renders custom monitoring dashboards on its own, without Grafana, whenever it finds a `ConfigMap` in the `openshift-config-managed` namespace labeled `console.openshift.io/dashboard: "true"`. The `data` key (ending in `.json`) holds a classic Grafana 6.x-style dashboard definition (`rows`/`panels`/`span`), and the console evaluates every PromQL query against the in-cluster **Thanos Querier** — the same data source the built-in dashboards use.
+
 This lab covers:
 
-- Grafana Community Operator installation (namespace-scoped to `poc-monitoring`)
-- Grafana instance deployment with Route access
-- OpenShift built-in Prometheus datasource integration (thanos-querier:9091 + Bearer token)
-- Dashboard 1: **KubeVirt VM Overall Status** (`poc-vm-overview`) — inline JSON, kubevirt metrics
-- Dashboard 2: **OpenShift Virtualization Dashboard** (`grafana-dashboard-ocp-v`) — loaded from external URL
+- Permission check for writing to `openshift-config-managed`
+- Dashboard 1: **KubeVirt VM Overall Status** (`poc-vm-overview`) — VM status summary, CPU/Memory/Network/Storage per VM
+- Dashboard 2: **OpenShift Virtualization Cluster Overview** (`poc-ocpv-overview`) — VM distribution by node, phase breakdown, live migration status
+
+**Trade-offs versus the Grafana Operator approach:**
+
+- The data source is always the cluster's own Thanos Querier — you cannot point these dashboards at an external or custom Prometheus.
+- Only the panel types the console's dashboard renderer understands are supported (`row`, `graph`, `singlestat`) — this is an older, narrower schema than modern Grafana panels (`timeseries`, `stat`, `table`).
+- This is a lightly-documented console extension point, not a fully productized API — the ConfigMap schema could change across OpenShift versions.
+- Writing to `openshift-config-managed` requires cluster-admin.
+
+If you need full Grafana panel features, alerting, or a datasource pointing outside the cluster, use the Grafana Operator path instead (see [11-coo](../11-coo/11-coo.md) step 5/5 for an example that registers a Grafana datasource).
 
 ---
 
 ## Prerequisites
 
-- Grafana Community Operator installed (see installation guide below)
-- `GRAFANA_ADMIN_PASS` configured in `env.conf` (default: `grafana123`)
+- Cluster-admin access (`oc auth can-i create configmap -n openshift-config-managed` must return `yes`)
+- No operator installation needed
 
 ---
 
-## Install Grafana Community Operator
-
-Install the Grafana Operator from OperatorHub (community-operators) scoped to the `poc-monitoring` namespace.
+## How It Works
 
 ```bash
-# Create namespace (if it does not exist)
-oc new-project poc-monitoring
-
-# Install Grafana Operator (namespace-scoped)
-oc apply -f - <<'EOF'
-apiVersion: operators.coreos.com/v1
-kind: OperatorGroup
-metadata:
-  name: grafana-operator-group
-  namespace: poc-monitoring
-spec:
-  targetNamespaces:
-    - poc-monitoring
----
-apiVersion: operators.coreos.com/v1alpha1
-kind: Subscription
-metadata:
-  name: grafana-operator
-  namespace: poc-monitoring
-spec:
-  channel: v5
-  name: grafana-operator
-  source: community-operators
-  sourceNamespace: openshift-marketplace
-EOF
-
-# Verify installation complete (wait for Succeeded status)
-oc get csv -n poc-monitoring | grep grafana
-# grafana-operator.v5.x.x   Grafana Operator   5.x.x   Succeeded
-
-# Re-run setup script to update GRAFANA_INSTALLED=true
-./12-grafana.sh
+oc auth can-i create configmap -n openshift-config-managed
 ```
 
----
+Any ConfigMap matching this shape is picked up automatically by the console — no restart or resync period needed, changes are reflected on next page load:
 
-## Deploy Grafana Instance
-
-```bash
-source env.conf
-
-oc apply -f - <<EOF
-apiVersion: grafana.integreatly.org/v1beta1
-kind: Grafana
+```yaml
+apiVersion: v1
+kind: ConfigMap
 metadata:
-  name: poc-grafana
-  namespace: poc-monitoring
+  name: <any-name>
+  namespace: openshift-config-managed
   labels:
-    dashboards: poc-grafana
-spec:
-  config:
-    auth:
-      disable_login_form: "false"
-    auth.anonymous:
-      enabled: "false"
-    security:
-      admin_user: admin
-      admin_password: ${GRAFANA_ADMIN_PASS:-grafana123}
-EOF
-```
-
-### Create OpenShift Route
-
-```bash
-oc apply -f - <<'EOF'
-apiVersion: route.openshift.io/v1
-kind: Route
-metadata:
-  name: poc-grafana-route
-  namespace: poc-monitoring
-  labels:
-    app: grafana
-spec:
-  to:
-    kind: Service
-    name: poc-grafana-service
-  port:
-    targetPort: grafana
-  tls:
-    termination: edge
-    insecureEdgeTerminationPolicy: Redirect
-EOF
-
-# Print access URL
-echo "https://$(oc get route poc-grafana-route -n poc-monitoring \
-  -o jsonpath='{.spec.host}')"
-```
-
----
-
-## Integrate OpenShift Prometheus DataSource
-
-Grafana connects to OpenShift's built-in Prometheus via the thanos-querier endpoint using a Bearer token.
-
-```bash
-# Grant cluster-monitoring-view permission to Grafana SA
-oc create clusterrolebinding grafana-cluster-monitoring-view \
-  --clusterrole=cluster-monitoring-view \
-  --serviceaccount=poc-monitoring:poc-grafana-sa 2>/dev/null || true
-
-# Obtain Prometheus token
-TOKEN=$(oc create token poc-grafana-sa -n poc-monitoring --duration=8760h)
-
-# Create GrafanaDatasource
-oc apply -f - <<EOF
-apiVersion: grafana.integreatly.org/v1beta1
-kind: GrafanaDatasource
-metadata:
-  name: prometheus-datasource
-  namespace: poc-monitoring
-spec:
-  instanceSelector:
-    matchLabels:
-      dashboards: poc-grafana
-  datasource:
-    name: Prometheus
-    type: prometheus
-    access: proxy
-    url: https://thanos-querier.openshift-monitoring.svc.cluster.local:9091
-    isDefault: true
-    jsonData:
-      httpHeaderName1: Authorization
-      timeInterval: 5s
-      tlsSkipVerify: true
-    secureJsonData:
-      httpHeaderValue1: Bearer ${TOKEN}
-EOF
+    console.openshift.io/dashboard: "true"
+data:
+  <any-name>.json: |
+    { ... Grafana 6.x-style dashboard JSON ... }
 ```
 
 ---
 
 ## Dashboard 1: KubeVirt VM Overall Status (poc-vm-overview)
-
-Deploys a Grafana dashboard with inline JSON showing VM status across the cluster.
 
 **Key PromQL queries used in this dashboard:**
 
@@ -197,87 +91,80 @@ rate(kubevirt_vmi_storage_write_traffic_bytes_total{namespace=~"$namespace", nam
 ```
 
 **Dashboard features:**
-- VM Status Summary — stat panels for Running, Paused, Abnormal, Total counts
-- VM Inventory — table view of all VMIs across the cluster
+- VM Status Summary — singlestat panels for Running, Paused, Abnormal, Total counts
 - CPU, Memory, Network I/O, Storage I/O time series panels
 - Namespace and VM Name template variables for filtering
 
----
-
-## Dashboard 2: OpenShift Virtualization Dashboard (grafana-dashboard-ocp-v)
-
-Deploys the community OpenShift Virtualization dashboard from an external URL.
+**Apply manually:**
 
 ```bash
 oc apply -f - <<'EOF'
-apiVersion: grafana.integreatly.org/v1beta1
-kind: GrafanaDashboard
+apiVersion: v1
+kind: ConfigMap
 metadata:
-  name: grafana-dashboard-ocp-v
-  namespace: poc-monitoring
+  name: poc-vm-overview-dashboard
+  namespace: openshift-config-managed
   labels:
-    app: poc-grafana
-spec:
-  resyncPeriod: 5m
-  instanceSelector:
-    matchLabels:
-      dashboards: poc-grafana
-  folder: "Openshift Virtualization"
-  url: https://raw.githubusercontent.com/leoaaraujo/articles/master/openshift-virtualization-monitoring/files/ocp-v-dashboard.json
+    console.openshift.io/dashboard: "true"
+data:
+  poc-vm-overview.json: |
+    { ... see 12-grafana.sh for the full JSON ... }
 EOF
 ```
 
-**What this dashboard shows:**
-- OpenShift Virtualization cluster overview
-- VM lifecycle metrics (creation, deletion, migration rates)
-- Resource utilization across all namespaces
-- Node-level VM density and resource pressure
-- Storage and network I/O aggregated by namespace
+---
 
-The dashboard is automatically fetched from the URL and synchronized by the Grafana Operator (`resyncPeriod: 5m`).
+## Dashboard 2: OpenShift Virtualization Cluster Overview (poc-ocpv-overview)
+
+**Key PromQL queries used in this dashboard:**
+
+```promql
+# VM count by node
+count(kubevirt_vmi_info) by (node)
+
+# VMI count by phase (cluster total)
+sum(kubevirt_vmi_phase_count) by (phase)
+
+# Live migrations currently pending / scheduling / running
+sum(kubevirt_vmi_migrations_in_pending_phase) or vector(0)
+sum(kubevirt_vmi_migrations_in_scheduling_phase) or vector(0)
+sum(kubevirt_vmi_migrations_in_running_phase) or vector(0)
+
+# Live migrations failed (cumulative counter)
+sum(kubevirt_vmi_migrations_failed) or vector(0)
+```
+
+**Dashboard features:**
+- VM distribution across nodes (stacked graph)
+- VMI phase breakdown across the cluster
+- Live migration status singlestats (Pending / Scheduling / Running / Failed)
 
 ---
 
-## Access Grafana
+## Access the Dashboards
 
-```bash
-# Get Grafana URL
-echo "https://$(oc get route poc-grafana-route -n poc-monitoring \
-  -o jsonpath='{.spec.host}')"
-```
-
-**Login credentials:**
-
-```bash
-# GRAFANA_ADMIN_PASS value from env.conf (default: grafana123)
-oc get secret grafana-admin-credentials -n poc-monitoring \
-  -o jsonpath='{.data.GF_SECURITY_ADMIN_USER}' | base64 -d && echo
-oc get secret grafana-admin-credentials -n poc-monitoring \
-  -o jsonpath='{.data.GF_SECURITY_ADMIN_PASSWORD}' | base64 -d && echo
-```
-
-**Navigate to dashboards:**
-
-1. Login to Grafana URL
-2. Left menu → **Dashboards**
-3. **KubeVirt VM Overall Status** — `/d/poc-vm-overview`
-4. **Openshift Virtualization** folder → ocp-v dashboard — `/d/ocp-v`
+1. Log in to the OpenShift web console as a user with monitoring view access
+2. Switch to the **Administrator** perspective
+3. **Observe → Dashboards**
+4. Select from the dashboard dropdown:
+   - **KubeVirt VM Overall Status**
+   - **OpenShift Virtualization Cluster Overview**
 
 ---
 
 ## VM Status Monitoring PromQL Reference
 
-With the Prometheus DataSource integrated, use the following PromQL in **Explore** or custom panels:
+With no datasource setup needed, use the following PromQL directly in **Observe → Metrics**:
 
 ```promql
 # VM running state (number of Running VMs)
 sum(kubevirt_vmi_phase_count{phase="Running"})
 
 # CPU utilization per VM
-rate(kubevirt_vmi_vcpu_seconds_total[5m])
+rate(kubevirt_vmi_cpu_usage_seconds_total[5m])
 
 # VM memory usage
-kubevirt_vmi_memory_used_bytes
+kubevirt_vmi_memory_resident_bytes
 
 # VM available memory
 kubevirt_vmi_memory_available_bytes
@@ -294,58 +181,41 @@ rate(kubevirt_vmi_storage_read_traffic_bytes_total[5m])
 # VM disk write
 rate(kubevirt_vmi_storage_write_traffic_bytes_total[5m])
 
-# Live Migration status
-kubevirt_vmi_migration_phase_transition_time_from_creation_seconds
+# Live migrations in progress
+sum(kubevirt_vmi_migrations_in_running_phase)
 ```
 
 ---
 
 ## Troubleshooting
 
-### Grafana Pod not starting
+### Permission denied creating the ConfigMap
 
 ```bash
-oc get pods -n poc-monitoring -l app=poc-grafana
-oc describe pod -n poc-monitoring -l app=poc-grafana
+oc auth can-i create configmap -n openshift-config-managed
+# must return "yes" — cluster-admin (or equivalent) is required
 ```
 
-### DataSource connection fails
+### Dashboard not showing in the console
 
 ```bash
-# Check ServiceAccount token
-oc get serviceaccount poc-grafana-sa -n poc-monitoring
+# Confirm the ConfigMap exists with the correct label
+oc get configmap -n openshift-config-managed -l console.openshift.io/dashboard=true
 
-# Check ClusterRoleBinding
-oc get clusterrolebinding grafana-cluster-monitoring-view
-
-# Check thanos-querier is accessible
-oc get service thanos-querier -n openshift-monitoring
+# Confirm the JSON key ends in .json and parses correctly
+oc get configmap poc-vm-overview-dashboard -n openshift-config-managed \
+  -o jsonpath='{.data.poc-vm-overview\.json}' | python3 -m json.tool > /dev/null && echo OK
 ```
 
-### Dashboard not showing in Grafana
+If the ConfigMap and label are correct but the dashboard is still missing, do a hard refresh of the console tab — the dashboard list is loaded once per page session.
+
+### No data in panels
 
 ```bash
-# Check GrafanaDashboard synchronization status
-oc get grafanadashboard -n poc-monitoring
-oc describe grafanadashboard poc-vm-overview -n poc-monitoring
-
-# Dashboard may take up to resyncPeriod (5m) to appear
-```
-
-### Check overall status
-
-```bash
-# Grafana Pod status
-oc get pods -n poc-monitoring -l app=grafana
-
-# Check Grafana Route
-oc get route -n poc-monitoring
-
-# GrafanaDatasource list
-oc get grafanadatasource -n poc-monitoring
-
-# GrafanaDashboard list
-oc get grafanadashboard -n poc-monitoring
+# Verify the KubeVirt metrics exist in Thanos Querier
+oc exec -n openshift-monitoring sts/thanos-querier -c thanos-query -- \
+  wget -qO- --header "Authorization: Bearer $(oc whoami -t)" \
+  'https://localhost:9091/api/v1/query?query=kubevirt_vmi_info' --no-check-certificate
 ```
 
 ---
@@ -355,6 +225,6 @@ oc get grafanadashboard -n poc-monitoring
 ```bash
 ./12-grafana.sh --cleanup
 # or manually:
-oc delete namespace poc-monitoring
-oc delete clusterrolebinding grafana-cluster-monitoring-view
+oc delete configmap poc-vm-overview-dashboard -n openshift-config-managed
+oc delete configmap poc-ocpv-overview-dashboard -n openshift-config-managed
 ```

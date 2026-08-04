@@ -26,7 +26,7 @@ cd ko
 | 09 | [09-alert](09-alert/09-alert.md) | PrometheusRule VM 알림 설정 |
 | 10 | [10-node-exporter](10-node-exporter/10-node-exporter.md) | 커스텀 메트릭 수집 (node_exporter) |
 | 11 | [11-coo](11-coo/11-coo.md) | Cluster Observability Operator MonitoringStack |
-| 12 | [12-grafana](12-grafana/12-grafana.md) | Grafana Operator + 대시보드 구성 |
+| 12 | [12-grafana](12-grafana/12-grafana.md) | OpenShift 콘솔 내장 대시보드 (Grafana Operator 불필요) |
 | 13 | [13-mtv](13-mtv/13-mtv.md) | VMware → OpenShift 마이그레이션 (MTV) |
 | 14 | [14-oadp](14-oadp/14-oadp.md) | VM 백업/복원 (OADP + S3) |
 | 15 | [15-node-maintenance](15-node-maintenance/15-node-maintenance.md) | 노드 유지보수 + VM Live Migration |

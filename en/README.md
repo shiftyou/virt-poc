@@ -26,7 +26,7 @@ cd en
 | 09 | [09-alert](09-alert/09-alert.md) | PrometheusRule VM notifications |
 | 10 | [10-node-exporter](10-node-exporter/10-node-exporter.md) | Custom metric collection (node_exporter) |
 | 11 | [11-coo](11-coo/11-coo.md) | Cluster Observability Operator MonitoringStack |
-| 12 | [12-grafana](12-grafana/12-grafana.md) | Grafana Operator + Dashboard |
+| 12 | [12-grafana](12-grafana/12-grafana.md) | OpenShift console built-in dashboards (no Grafana Operator) |
 | 13 | [13-mtv](13-mtv/13-mtv.md) | VMware → OpenShift migration (MTV) |
 | 14 | [14-oadp](14-oadp/14-oadp.md) | VM backup/restore (OADP + S3) |
 | 15 | [15-node-maintenance](15-node-maintenance/15-node-maintenance.md) | Node maintenance + VM Live Migration |
