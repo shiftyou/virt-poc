@@ -72,10 +72,10 @@ cat <<'EOF' | oc apply -f -
 apiVersion: grafana.integreatly.org/v1beta1
 kind: Grafana
 metadata:
-  name: grafana
+  name: poc-grafana
   namespace: poc-grafana
   labels:
-    dashboards: grafana
+    dashboards: poc-grafana
 spec:
   config:
     auth:
@@ -90,8 +90,28 @@ spec:
 EOF
 ```
 
+> The label `dashboards: poc-grafana` and instance name `poc-grafana` are load-bearing — [11-coo](../11-coo/11-coo.md) and [12-grafana](../12-grafana/12-grafana.md) look up this exact label via `instanceSelector` to register their `GrafanaDatasource`/`GrafanaDashboard` resources, and the route name (`<name>-route`) is used to print the access URL.
+
 ### Check Access URL
 
 ```bash
-oc get route grafana-route -n poc-grafana
+oc get route poc-grafana-route -n poc-grafana
 ```
+
+---
+
+## Note — Dashboards/Datasources in Other Namespaces
+
+`GrafanaDashboard` and `GrafanaDatasource` resources are matched to this Grafana instance purely via `instanceSelector.matchLabels.dashboards: poc-grafana` — they can live in a different namespace than the Grafana instance itself (e.g. [11-coo](../11-coo/11-coo.md) creates them in `poc-monitoring`). If such a cross-namespace resource never syncs, add a namespace selector to the Grafana CR so the Operator watches that namespace too:
+
+```bash
+oc patch grafana poc-grafana -n poc-grafana --type=merge -p '{
+  "spec": {
+    "namespaceSelector": {
+      "matchLabels": {}
+    }
+  }
+}'
+```
+
+or reinstall the Operator with Installation mode `All namespaces on the cluster` instead of a single namespace.

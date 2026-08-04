@@ -1,6 +1,6 @@
 # OpenShift Console Built-in Monitoring Dashboards (No Grafana Operator)
 
-Register custom OpenShift Virtualization dashboards directly into the OpenShift web console's built-in **Observe → Dashboards** view — no Grafana Operator, Grafana instance, or Route required.
+Register custom OpenShift Virtualization dashboards directly into the OpenShift web console's built-in **Observe → Dashboards** view — no Grafana Operator, Grafana instance, or Route required. An optional [Grafana Operator-based path](#option-b-same-dashboards-via-grafana-operator) is also covered further down for when you need it.
 
 ---
 
@@ -8,20 +8,22 @@ Register custom OpenShift Virtualization dashboards directly into the OpenShift 
 
 The OpenShift web console renders custom monitoring dashboards on its own, without Grafana, whenever it finds a `ConfigMap` in the `openshift-config-managed` namespace labeled `console.openshift.io/dashboard: "true"`. The `data` key (ending in `.json`) holds a classic Grafana 6.x-style dashboard definition (`rows`/`panels`/`span`), and the console evaluates every PromQL query against the in-cluster **Thanos Querier** — the same data source the built-in dashboards use.
 
-This lab covers:
+This lab covers two independent ways to deploy the same two dashboards — `12-grafana.sh` runs both, each auto-skipped if its prerequisites aren't met:
 
-- Permission check for writing to `openshift-config-managed`
-- Dashboard 1: **KubeVirt VM Overall Status** (`poc-vm-overview`) — VM status summary, CPU/Memory/Network/Storage per VM
-- Dashboard 2: **OpenShift Virtualization Cluster Overview** (`poc-ocpv-overview`) — VM distribution by node, phase breakdown, live migration status
+- **Option A — Console built-in (no Operator, steps 1/3–2/3):**
+  - Permission check for writing to `openshift-config-managed`
+  - Dashboard 1: **KubeVirt VM Overall Status** (`poc-vm-overview`) — VM status summary, CPU/Memory/Network/Storage per VM
+  - Dashboard 2: **OpenShift Virtualization Cluster Overview** (`poc-ocpv-overview`) — VM distribution by node, phase breakdown, live migration status
+- **Option B — Grafana Operator (step 3/3, optional):** the same two dashboards as `GrafanaDashboard` resources, with modern panel types and a Thanos Querier datasource — see [Option B](#option-b-same-dashboards-via-grafana-operator) below.
 
-**Trade-offs versus the Grafana Operator approach:**
+**Trade-offs of Option A versus Option B:**
 
 - The data source is always the cluster's own Thanos Querier — you cannot point these dashboards at an external or custom Prometheus.
 - Only the panel types the console's dashboard renderer understands are supported (`row`, `graph`, `singlestat`) — this is an older, narrower schema than modern Grafana panels (`timeseries`, `stat`, `table`).
 - This is a lightly-documented console extension point, not a fully productized API — the ConfigMap schema could change across OpenShift versions.
 - Writing to `openshift-config-managed` requires cluster-admin.
 
-If you need full Grafana panel features, alerting, or a datasource pointing outside the cluster, use the Grafana Operator path instead (see [11-coo](../11-coo/11-coo.md) step 5/5 for an example that registers a Grafana datasource).
+If you need full Grafana panel features, alerting, or a datasource pointing outside the cluster, use [Option B](#option-b-same-dashboards-via-grafana-operator) instead.
 
 ---
 
@@ -187,6 +189,70 @@ sum(kubevirt_vmi_migrations_in_running_phase)
 
 ---
 
+## Option B: Same Dashboards via Grafana Operator
+
+Deploy the same two dashboards as `GrafanaDashboard` custom resources managed by the [Grafana Operator](../operators/grafana-operator.md), instead of (or in addition to) the console ConfigMaps above. Use this path when you need modern Grafana panel types (`timeseries`, `stat`), Grafana alerting, or dashboards viewable outside the OpenShift console.
+
+### Prerequisites
+
+- Grafana Operator installed and a `Grafana` instance created with label `dashboards: poc-grafana` — see [operators/grafana-operator.md](../operators/grafana-operator.md)
+- `GRAFANA_INSTALLED=true` in `env.conf` (auto-detected from the installed CSV when `12-grafana.sh` runs)
+
+### How It Works
+
+`12-grafana.sh` runs this as step 3/3, automatically skipped if no Grafana Operator or Grafana instance is found:
+
+1. A dedicated `ServiceAccount` (`poc-grafana-view`) and a `ClusterRoleBinding` to `cluster-monitoring-view` are created so Grafana can authenticate to the in-cluster Thanos Querier.
+2. A `GrafanaDatasource` (`thanos-querier-datasource`) is registered against `https://thanos-querier.openshift-monitoring.svc.cluster.local:9091`, using a Bearer token issued to that ServiceAccount.
+3. Two `GrafanaDashboard` resources (`poc-vm-overview-operator`, `poc-ocpv-overview-operator`) are created with the same PromQL queries as Dashboard 1/2 above, using the modern Grafana panel schema (`stat`, `timeseries`).
+
+All resources are created in whichever namespace the detected `Grafana` instance lives in (`poc-grafana` by convention).
+
+> The ServiceAccount token is generated with `oc create token --duration=8760h` (1 year). Tokens are capped by the cluster's `service-account-max-token-expiration` setting and will need to be regenerated — just rerun `12-grafana.sh` — if the cluster enforces a shorter limit or after expiry.
+
+### Deploy
+
+```bash
+./12-grafana.sh
+# step 3/3 runs automatically once the Grafana Operator + instance are detected
+```
+
+### Access
+
+```bash
+oc get route poc-grafana-route -n <grafana-namespace> -o jsonpath='{.spec.host}'
+```
+
+Log in (`admin` / the password configured on the `Grafana` CR) → **Dashboards** → **KubeVirt VM Overall Status (Operator)** / **OpenShift Virtualization Cluster Overview (Operator)**.
+
+### Troubleshooting
+
+**Datasource shows "Unauthorized" in Grafana**
+
+```bash
+# The Bearer token may have expired — regenerate by rerunning the script
+./12-grafana.sh
+```
+
+**GrafanaDashboard/GrafanaDatasource not syncing**
+
+```bash
+oc get grafanadashboard,grafanadatasource -n <grafana-namespace>
+oc describe grafanadashboard poc-vm-overview-operator -n <grafana-namespace>
+# If the dashboard/datasource live in a different namespace than the Grafana
+# instance, the Grafana CR needs a namespaceSelector covering it — see
+# operators/grafana-operator.md.
+```
+
+### Rollback
+
+```bash
+./12-grafana.sh --cleanup
+# Also removes the operator-based dashboards, datasource, ServiceAccount, and ClusterRoleBinding
+```
+
+---
+
 ## Troubleshooting
 
 ### Permission denied creating the ConfigMap
@@ -224,7 +290,15 @@ oc exec -n openshift-monitoring sts/thanos-querier -c thanos-query -- \
 
 ```bash
 ./12-grafana.sh --cleanup
+# removes both the console ConfigMaps (Option A) and, if present, the
+# Grafana Operator dashboards/datasource/ServiceAccount (Option B)
+
 # or manually:
 oc delete configmap poc-vm-overview-dashboard -n openshift-config-managed
 oc delete configmap poc-ocpv-overview-dashboard -n openshift-config-managed
+
+oc delete grafanadashboard poc-vm-overview-operator poc-ocpv-overview-operator -n <grafana-namespace>
+oc delete grafanadatasource thanos-querier-datasource -n <grafana-namespace>
+oc delete serviceaccount poc-grafana-view -n <grafana-namespace>
+oc delete clusterrolebinding grafana-cluster-monitoring-view
 ```

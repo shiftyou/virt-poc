@@ -2,14 +2,17 @@
 # =============================================================================
 # 12-grafana.sh
 #
-# OpenShift Console built-in Monitoring Dashboards (no Grafana Operator)
-#   1/2  Deploy poc-vm-overview dashboard (KubeVirt VM Overall Status)
-#   2/2  Deploy poc-ocpv-overview dashboard (OpenShift Virtualization Cluster Overview)
+# OpenShift Console built-in Monitoring Dashboards (no Grafana Operator required)
+#   1/3  Deploy poc-vm-overview dashboard (KubeVirt VM Overall Status)
+#   2/3  Deploy poc-ocpv-overview dashboard (OpenShift Virtualization Cluster Overview)
+#   3/3  Deploy the same dashboards via Grafana Operator (optional, auto-skipped
+#        if the Grafana Operator / a poc-grafana Grafana instance is not found)
 #
-# Dashboards are registered as ConfigMaps in openshift-config-managed with the
-# label console.openshift.io/dashboard: "true". The OpenShift web console
-# renders them directly under Observe > Dashboards (Administrator perspective)
-# using the in-cluster Thanos Querier — no Grafana instance is deployed.
+# Dashboards 1/3 and 2/3 are registered as ConfigMaps in openshift-config-managed
+# with the label console.openshift.io/dashboard: "true". The OpenShift web
+# console renders them directly under Observe > Dashboards (Administrator
+# perspective) using the in-cluster Thanos Querier — no Grafana instance
+# is required for this path.
 #
 # Usage: ./12-grafana.sh
 # =============================================================================
@@ -26,6 +29,14 @@ fi
 source "${SCRIPT_DIR}/../utils/common.sh"
 
 DASHBOARD_NS="openshift-config-managed"
+GRAFANA_NS=""
+
+# Looks up the namespace of the Grafana instance labeled dashboards=poc-grafana
+# (see operators/grafana-operator.md) and stores it in the global GRAFANA_NS.
+detect_grafana_instance() {
+    GRAFANA_NS=$(oc get grafana --all-namespaces -l dashboards=poc-grafana \
+        -o jsonpath='{.items[0].metadata.namespace}' 2>/dev/null || true)
+}
 
 preflight() {
     print_step "Pre-flight checks"
@@ -42,10 +53,32 @@ preflight() {
         exit 1
     fi
     print_ok "Permission to write dashboards to ${DASHBOARD_NS} confirmed"
+
+    # Auto-detect from cluster CSV if not in env.conf
+    if [ "${GRAFANA_INSTALLED:-false}" != "true" ]; then
+        if oc get csv --all-namespaces --no-headers 2>/dev/null \
+            | grep -qi "grafana-operator"; then
+            GRAFANA_INSTALLED=true
+            print_ok "Grafana Community Operator auto-detected (CSV)"
+        fi
+    fi
+
+    if [ "${GRAFANA_INSTALLED:-false}" = "true" ]; then
+        detect_grafana_instance
+        if [ -n "${GRAFANA_NS:-}" ]; then
+            print_ok "Grafana instance found in namespace ${GRAFANA_NS} — step 3/3 will deploy operator-based dashboards."
+        else
+            print_warn "Grafana Operator installed but no Grafana instance labeled dashboards=poc-grafana found — step 3/3 will be skipped."
+            print_info "  See operators/grafana-operator.md to create one."
+        fi
+    else
+        print_warn "Grafana Operator not installed — step 3/3 (operator-based dashboards) will be skipped."
+        print_info "  See operators/grafana-operator.md for installation."
+    fi
 }
 
 step_dashboard_vm() {
-    print_step "1/2  Deploy KubeVirt VM Overall Status dashboard (poc-vm-overview)"
+    print_step "1/3  Deploy KubeVirt VM Overall Status dashboard (poc-vm-overview)"
 
     # Dashboard JSON (single-quoted heredoc — \$datasource/\$namespace/\$vm are
     # Grafana-style template variables understood by the console renderer,
@@ -537,7 +570,7 @@ DASHBOARD_EOF
 }
 
 step_dashboard_ocpv() {
-    print_step "2/2  Deploy OpenShift Virtualization Cluster Overview dashboard (poc-ocpv-overview)"
+    print_step "2/3  Deploy OpenShift Virtualization Cluster Overview dashboard (poc-ocpv-overview)"
 
     cat > ./poc-ocpv-overview.json << 'DASHBOARD_EOF'
 {
@@ -816,6 +849,356 @@ DASHBOARD_EOF
     print_info "  Dashboard: Console → Observe → Dashboards → OpenShift Virtualization Cluster Overview"
 }
 
+step_operator_dashboards() {
+    print_step "3/3  Deploy the same dashboards via Grafana Operator (optional)"
+
+    if [ "${GRAFANA_INSTALLED:-false}" != "true" ]; then
+        print_warn "Grafana Operator not installed — skipping."
+        print_info "  See operators/grafana-operator.md for installation."
+        return
+    fi
+
+    detect_grafana_instance
+    if [ -z "${GRAFANA_NS:-}" ]; then
+        print_warn "No Grafana instance labeled dashboards=poc-grafana found — skipping."
+        print_info "  See operators/grafana-operator.md to create one."
+        return
+    fi
+    print_ok "Grafana instance detected in namespace ${GRAFANA_NS}"
+
+    # ServiceAccount + ClusterRoleBinding so Grafana can authenticate to the
+    # in-cluster Thanos Querier (cluster-monitoring-view is read-only).
+    if oc get serviceaccount poc-grafana-view -n "$GRAFANA_NS" &>/dev/null; then
+        print_ok "ServiceAccount poc-grafana-view already exists — skipping"
+    else
+        oc create serviceaccount poc-grafana-view -n "$GRAFANA_NS" > /dev/null
+        print_ok "ServiceAccount poc-grafana-view created"
+    fi
+
+    if oc get clusterrolebinding grafana-cluster-monitoring-view &>/dev/null; then
+        print_ok "ClusterRoleBinding grafana-cluster-monitoring-view already exists — skipping"
+    else
+        oc create clusterrolebinding grafana-cluster-monitoring-view \
+            --clusterrole=cluster-monitoring-view \
+            --serviceaccount="${GRAFANA_NS}:poc-grafana-view" > /dev/null
+        print_ok "ClusterRoleBinding grafana-cluster-monitoring-view created"
+    fi
+
+    # Long-lived Bearer token for the Thanos Querier datasource. Subject to the
+    # cluster's service-account-max-token-expiration — rerun this script to
+    # regenerate if the cluster enforces a shorter limit or after expiry.
+    local token
+    token=$(oc create token poc-grafana-view -n "$GRAFANA_NS" --duration=8760h 2>/dev/null || true)
+    if [ -z "$token" ]; then
+        print_error "Failed to generate ServiceAccount token — skipping datasource/dashboard registration."
+        return
+    fi
+
+    # Piped directly into oc apply (never written to disk) since it carries the Bearer token.
+    cat <<EOF | oc apply -f - > /dev/null
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: thanos-querier-datasource
+  namespace: ${GRAFANA_NS}
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: poc-grafana
+  datasource:
+    name: Thanos-Querier
+    type: prometheus
+    access: proxy
+    url: https://thanos-querier.openshift-monitoring.svc.cluster.local:9091
+    jsonData:
+      timeInterval: 30s
+      tlsSkipVerify: true
+      httpHeaderName1: Authorization
+    secureJsonData:
+      httpHeaderValue1: "Bearer ${token}"
+EOF
+    print_ok "GrafanaDatasource thanos-querier-datasource registered"
+
+    cat > ./poc-vm-overview-operator.json << 'DASHBOARD_EOF'
+{
+  "annotations": {"list": [{"builtIn": 1, "datasource": {"type": "grafana", "uid": "-- Grafana --"}, "enable": true, "hide": true, "iconColor": "rgba(0,211,255,1)", "name": "Annotations & Alerts", "type": "dashboard"}]},
+  "description": "KubeVirt VM Overall Status — Grafana Operator based (Thanos Querier)",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["kubevirt", "vm", "poc", "openshift-virtualization", "grafana-operator"],
+  "templating": {
+    "list": [
+      {"current": {"selected": false, "text": "Thanos-Querier", "value": "Thanos-Querier"}, "hide": 0, "includeAll": false, "label": "Datasource", "multi": false, "name": "datasource", "options": [], "query": "prometheus", "refresh": 1, "type": "datasource"},
+      {"allValue": ".*", "current": {"selected": true, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "${datasource}"}, "definition": "label_values(kubevirt_vmi_info, namespace)", "hide": 0, "includeAll": true, "label": "Namespace", "multi": true, "name": "namespace", "options": [], "query": {"query": "label_values(kubevirt_vmi_info, namespace)", "refId": "Q"}, "refresh": 2, "regex": "", "sort": 1, "type": "query"},
+      {"allValue": ".*", "current": {"selected": true, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "${datasource}"}, "definition": "label_values(kubevirt_vmi_info, name)", "hide": 0, "includeAll": true, "label": "VM Name", "multi": true, "name": "vm", "options": [], "query": {"query": "label_values(kubevirt_vmi_info, name)", "refId": "Q"}, "refresh": 2, "regex": "", "sort": 1, "type": "query"}
+    ]
+  },
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "KubeVirt VM Overall Status (Operator)",
+  "uid": "poc-vm-overview-operator",
+  "version": 1,
+  "panels": [
+    {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}, "id": 100, "title": "VM Status Summary", "type": "row"},
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"fixedColor": "green", "mode": "fixed"}, "mappings": [], "unit": "none"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 1},
+      "id": 1,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "title": "Running — Cluster Total",
+      "type": "stat",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(kubevirt_vmi_phase_count{phase=~\"Running|running\"}) or vector(0)", "legendFormat": "", "refId": "A"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"fixedColor": "yellow", "mode": "fixed"}, "mappings": [], "unit": "none"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 1},
+      "id": 2,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "title": "Paused — Cluster Total",
+      "type": "stat",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(kubevirt_vmi_phase_count{phase=~\"Paused|paused\"}) or vector(0)", "legendFormat": "", "refId": "A"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"fixedColor": "red", "mode": "fixed"}, "mappings": [], "unit": "none"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 1},
+      "id": 3,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "title": "Abnormal (Pending/Failed) — Cluster Total",
+      "type": "stat",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(kubevirt_vmi_phase_count{phase!~\"Running|running|Paused|paused\"}) or vector(0)", "legendFormat": "", "refId": "A"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"fixedColor": "blue", "mode": "fixed"}, "mappings": [], "unit": "none"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 1},
+      "id": 4,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "title": "Total Active VMI — Cluster Total",
+      "type": "stat",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "count(kubevirt_vmi_info) or vector(0)", "legendFormat": "", "refId": "A"}]
+    },
+    {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5}, "id": 101, "title": "CPU", "type": "row"},
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false}, "mappings": [], "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 6},
+      "id": 5,
+      "options": {"legend": {"calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "title": "CPU Utilization (vCPU seconds/s)",
+      "type": "timeseries",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "rate(kubevirt_vmi_cpu_usage_seconds_total{namespace=~\"$namespace\", name=~\"$vm\"}[5m])", "legendFormat": "{{namespace}}/{{name}}", "refId": "A"}]
+    },
+    {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14}, "id": 102, "title": "Memory", "type": "row"},
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false}, "mappings": [], "unit": "bytes"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 15},
+      "id": 6,
+      "options": {"legend": {"calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "title": "Memory Usage (Resident)",
+      "type": "timeseries",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "kubevirt_vmi_memory_resident_bytes{namespace=~\"$namespace\", name=~\"$vm\"}", "legendFormat": "{{namespace}}/{{name}}", "refId": "A"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false}, "mappings": [], "unit": "percentunit", "min": 0, "max": 1}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 15},
+      "id": 7,
+      "options": {"legend": {"calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "title": "Memory Utilization (%)",
+      "type": "timeseries",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "kubevirt_vmi_memory_resident_bytes{namespace=~\"$namespace\", name=~\"$vm\"} / (kubevirt_vmi_memory_resident_bytes{namespace=~\"$namespace\", name=~\"$vm\"} + kubevirt_vmi_memory_available_bytes{namespace=~\"$namespace\", name=~\"$vm\"})", "legendFormat": "{{namespace}}/{{name}}", "refId": "A"}]
+    },
+    {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 23}, "id": 103, "title": "Network I/O", "type": "row"},
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false}, "mappings": [], "unit": "Bps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "id": 8,
+      "options": {"legend": {"calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "title": "Network Receive (RX)",
+      "type": "timeseries",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "rate(kubevirt_vmi_network_receive_bytes_total{namespace=~\"$namespace\", name=~\"$vm\"}[5m])", "legendFormat": "{{namespace}}/{{name}} [{{interface}}]", "refId": "A"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false}, "mappings": [], "unit": "Bps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+      "id": 9,
+      "options": {"legend": {"calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "title": "Network Transmit (TX)",
+      "type": "timeseries",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "rate(kubevirt_vmi_network_transmit_bytes_total{namespace=~\"$namespace\", name=~\"$vm\"}[5m])", "legendFormat": "{{namespace}}/{{name}} [{{interface}}]", "refId": "A"}]
+    },
+    {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 32}, "id": 104, "title": "Storage I/O", "type": "row"},
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false}, "mappings": [], "unit": "Bps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 33},
+      "id": 10,
+      "options": {"legend": {"calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "title": "Storage Read",
+      "type": "timeseries",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "rate(kubevirt_vmi_storage_read_traffic_bytes_total{namespace=~\"$namespace\", name=~\"$vm\"}[5m])", "legendFormat": "{{namespace}}/{{name}} [{{drive}}]", "refId": "A"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false}, "mappings": [], "unit": "Bps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 33},
+      "id": 11,
+      "options": {"legend": {"calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "title": "Storage Write",
+      "type": "timeseries",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "rate(kubevirt_vmi_storage_write_traffic_bytes_total{namespace=~\"$namespace\", name=~\"$vm\"}[5m])", "legendFormat": "{{namespace}}/{{name}} [{{drive}}]", "refId": "A"}]
+    }
+  ]
+}
+DASHBOARD_EOF
+
+    {
+        printf 'apiVersion: grafana.integreatly.org/v1beta1\n'
+        printf 'kind: GrafanaDashboard\n'
+        printf 'metadata:\n'
+        printf '  name: poc-vm-overview-operator\n'
+        printf '  namespace: %s\n' "${GRAFANA_NS}"
+        printf 'spec:\n'
+        printf '  resyncPeriod: 5m\n'
+        printf '  instanceSelector:\n'
+        printf '    matchLabels:\n'
+        printf '      dashboards: poc-grafana\n'
+        printf '  json: |\n'
+        sed 's/^/    /' ./poc-vm-overview-operator.json
+    } > ./poc-vm-overview-operator-dashboard.yaml
+
+    oc apply -f ./poc-vm-overview-operator-dashboard.yaml
+    print_ok "GrafanaDashboard poc-vm-overview-operator deployed"
+
+    cat > ./poc-ocpv-overview-operator.json << 'DASHBOARD_EOF'
+{
+  "annotations": {"list": [{"builtIn": 1, "datasource": {"type": "grafana", "uid": "-- Grafana --"}, "enable": true, "hide": true, "iconColor": "rgba(0,211,255,1)", "name": "Annotations & Alerts", "type": "dashboard"}]},
+  "description": "OpenShift Virtualization Cluster Overview — Grafana Operator based (Thanos Querier)",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["kubevirt", "poc", "openshift-virtualization", "grafana-operator"],
+  "templating": {
+    "list": [
+      {"current": {"selected": false, "text": "Thanos-Querier", "value": "Thanos-Querier"}, "hide": 0, "includeAll": false, "label": "Datasource", "multi": false, "name": "datasource", "options": [], "query": "prometheus", "refresh": 1, "type": "datasource"}
+    ]
+  },
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "OpenShift Virtualization Cluster Overview (Operator)",
+  "uid": "poc-ocpv-overview-operator",
+  "version": 1,
+  "panels": [
+    {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}, "id": 100, "title": "VM Distribution", "type": "row"},
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false, "stacking": {"group": "A", "mode": "normal"}}, "mappings": [], "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 1},
+      "id": 1,
+      "options": {"legend": {"calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "title": "VM Count by Node",
+      "type": "timeseries",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "count(kubevirt_vmi_info) by (node)", "legendFormat": "{{node}}", "refId": "A"}]
+    },
+    {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 9}, "id": 101, "title": "VM Phase Breakdown", "type": "row"},
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "pointSize": 5, "showPoints": "never", "spanNulls": false, "stacking": {"group": "A", "mode": "normal"}}, "mappings": [], "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 10},
+      "id": 2,
+      "options": {"legend": {"calcs": ["mean", "max", "last"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "title": "VMI Count by Phase (Cluster Total)",
+      "type": "timeseries",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(kubevirt_vmi_phase_count) by (phase)", "legendFormat": "{{phase}}", "refId": "A"}]
+    },
+    {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 18}, "id": 102, "title": "Live Migration Status", "type": "row"},
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"fixedColor": "blue", "mode": "fixed"}, "mappings": [], "unit": "none"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 19},
+      "id": 3,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "title": "Pending",
+      "type": "stat",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(kubevirt_vmi_migrations_in_pending_phase) or vector(0)", "legendFormat": "", "refId": "A"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"fixedColor": "yellow", "mode": "fixed"}, "mappings": [], "unit": "none"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 19},
+      "id": 4,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "title": "Scheduling",
+      "type": "stat",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(kubevirt_vmi_migrations_in_scheduling_phase) or vector(0)", "legendFormat": "", "refId": "A"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"fixedColor": "green", "mode": "fixed"}, "mappings": [], "unit": "none"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 19},
+      "id": 5,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "title": "Running",
+      "type": "stat",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(kubevirt_vmi_migrations_in_running_phase) or vector(0)", "legendFormat": "", "refId": "A"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"fixedColor": "red", "mode": "fixed"}, "mappings": [], "unit": "none"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 19},
+      "id": 6,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "title": "Failed (Total)",
+      "type": "stat",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(kubevirt_vmi_migrations_failed) or vector(0)", "legendFormat": "", "refId": "A"}]
+    }
+  ]
+}
+DASHBOARD_EOF
+
+    {
+        printf 'apiVersion: grafana.integreatly.org/v1beta1\n'
+        printf 'kind: GrafanaDashboard\n'
+        printf 'metadata:\n'
+        printf '  name: poc-ocpv-overview-operator\n'
+        printf '  namespace: %s\n' "${GRAFANA_NS}"
+        printf 'spec:\n'
+        printf '  resyncPeriod: 5m\n'
+        printf '  instanceSelector:\n'
+        printf '    matchLabels:\n'
+        printf '      dashboards: poc-grafana\n'
+        printf '  json: |\n'
+        sed 's/^/    /' ./poc-ocpv-overview-operator.json
+    } > ./poc-ocpv-overview-operator-dashboard.yaml
+
+    oc apply -f ./poc-ocpv-overview-operator-dashboard.yaml
+    print_ok "GrafanaDashboard poc-ocpv-overview-operator deployed"
+
+    local grafana_route
+    grafana_route=$(oc get route poc-grafana-route -n "$GRAFANA_NS" -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+    if [ -n "$grafana_route" ]; then
+        print_info "  Dashboard: https://${grafana_route}/d/poc-vm-overview-operator"
+        print_info "  Dashboard: https://${grafana_route}/d/poc-ocpv-overview-operator"
+    fi
+}
+
 print_summary() {
     echo ""
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -834,6 +1217,13 @@ print_summary() {
     echo -e "  Check ConfigMaps:"
     echo -e "    ${CYAN}oc get configmap -n ${DASHBOARD_NS} -l console.openshift.io/dashboard=true${NC}"
     echo ""
+
+    if [ -n "${GRAFANA_NS:-}" ]; then
+        echo -e "  Grafana Operator dashboards also deployed in namespace ${GRAFANA_NS}:"
+        echo -e "    ${CYAN}oc get grafanadashboard,grafanadatasource -n ${GRAFANA_NS}${NC}"
+        echo ""
+    fi
+
     echo -e "  For details: refer to 12-grafana/12-grafana.md"
     echo ""
 }
@@ -845,6 +1235,15 @@ cleanup() {
     print_step "--cleanup: Delete 12-grafana resources"
     oc delete configmap poc-vm-overview-dashboard -n "$DASHBOARD_NS" --ignore-not-found 2>/dev/null || true
     oc delete configmap poc-ocpv-overview-dashboard -n "$DASHBOARD_NS" --ignore-not-found 2>/dev/null || true
+
+    detect_grafana_instance
+    if [ -n "${GRAFANA_NS:-}" ]; then
+        oc delete grafanadashboard poc-vm-overview-operator poc-ocpv-overview-operator -n "$GRAFANA_NS" --ignore-not-found 2>/dev/null || true
+        oc delete grafanadatasource thanos-querier-datasource -n "$GRAFANA_NS" --ignore-not-found 2>/dev/null || true
+        oc delete serviceaccount poc-grafana-view -n "$GRAFANA_NS" --ignore-not-found 2>/dev/null || true
+    fi
+    oc delete clusterrolebinding grafana-cluster-monitoring-view --ignore-not-found 2>/dev/null || true
+
     print_ok "12-grafana resources deleted"
 }
 
@@ -857,6 +1256,7 @@ main() {
     preflight
     step_dashboard_vm
     step_dashboard_ocpv
+    step_operator_dashboards
     print_summary
 }
 
