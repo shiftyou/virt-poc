@@ -55,6 +55,7 @@ cd en
 | OADP | [oadp-operator.md](operators/oadp-operator.md) |
 | Grafana | [grafana-operator.md](operators/grafana-operator.md) |
 | COO | OperatorHub → "Cluster Observability Operator" |
+| Red Hat build of Perses (via COO) | [perses-coo.md](operators/perses-coo.md) |
 | Kube Descheduler | [descheduler-operator.md](operators/descheduler-operator.md) |
 | Node Health Check | [nhc-operator.md](operators/nhc-operator.md) |
 | Self Node Remediation | [snr-operator.md](operators/snr-operator.md) |

@@ -8,7 +8,7 @@ Register custom OpenShift Virtualization dashboards directly into the OpenShift 
 
 The OpenShift web console renders custom monitoring dashboards on its own, without Grafana, whenever it finds a `ConfigMap` in the `openshift-config-managed` namespace labeled `console.openshift.io/dashboard: "true"`. The `data` key (ending in `.json`) holds a classic Grafana 6.x-style dashboard definition (`rows`/`panels`/`span`), and the console evaluates every PromQL query against the in-cluster **Thanos Querier** — the same data source the built-in dashboards use.
 
-This section covers (`12-grafana.sh` steps 1/3–2/3):
+This section covers (`12-grafana.sh` steps 1/4–2/4):
 
 - Permission check for writing to `openshift-config-managed`
 - Dashboard 1: **KubeVirt VM Overall Status** (`poc-vm-overview`) — VM status summary, CPU/Memory/Network/Storage per VM
@@ -21,7 +21,7 @@ This section covers (`12-grafana.sh` steps 1/3–2/3):
 - This is a lightly-documented console extension point, not a fully productized API — the ConfigMap schema could change across OpenShift versions.
 - Writing to `openshift-config-managed` requires cluster-admin.
 
-If you need full Grafana panel features, alerting, or a datasource pointing outside the cluster, see [Using the Grafana Operator](#using-the-grafana-operator) below.
+If you need full Grafana panel features, alerting, or a datasource pointing outside the cluster, see [Using the Grafana Operator](#using-the-grafana-operator) below. If Red Hat subscription support matters more than Grafana's ecosystem maturity, see [Using Cluster Observability Operator (COO) and Red Hat build of Perses](#using-cluster-observability-operator-coo-and-red-hat-build-of-perses-recommended) instead — the Grafana Operator installed below is a **Community** Operator and is not covered by a Red Hat subscription.
 
 ---
 
@@ -240,20 +240,21 @@ Deploy the same two dashboards as `GrafanaDashboard` custom resources managed by
 
 ## Prerequisites
 
-- Grafana Operator installed and a `Grafana` instance created with label `dashboards: poc-grafana` — see [operators/grafana-operator.md](../operators/grafana-operator.md)
+- Grafana Operator installed — see [operators/grafana-operator.md](../operators/grafana-operator.md). A `Grafana` instance labeled `dashboards: poc-grafana` is **not** required beforehand: `12-grafana.sh` creates one automatically (namespace `poc-grafana`) if it doesn't find one.
 - `GRAFANA_INSTALLED=true` in `env.conf` (auto-detected from the installed CSV when `12-grafana.sh` runs)
 
 ---
 
 ## How It Works
 
-`12-grafana.sh` runs this as step 3/3, automatically skipped if no Grafana Operator or Grafana instance is found:
+`12-grafana.sh` runs this as step 3/4, automatically skipped only if the Grafana Operator itself is not installed:
 
-1. A dedicated `ServiceAccount` (`poc-grafana-view`) and a `ClusterRoleBinding` to `cluster-monitoring-view` are created so Grafana can authenticate to the in-cluster Thanos Querier.
-2. A `GrafanaDatasource` (`thanos-querier-datasource`) is registered against `https://thanos-querier.openshift-monitoring.svc.cluster.local:9091`, using a Bearer token issued to that ServiceAccount.
-3. Two `GrafanaDashboard` resources (`poc-vm-overview-operator`, `poc-ocpv-overview-operator`) are created with the same PromQL queries as Dashboard 1/2 above, using the modern Grafana panel schema (`stat`, `timeseries`).
+1. If no `Grafana` instance labeled `dashboards: poc-grafana` exists yet, one is created — namespace `poc-grafana`, `admin` / `GRAFANA_ADMIN_PASSWORD` from `env.conf` (default `grafana123`), edge-terminated Route. This is the same shape documented in [operators/grafana-operator.md](../operators/grafana-operator.md); the script just applies it for you if it's missing.
+2. A dedicated `ServiceAccount` (`poc-grafana-view`) and a `ClusterRoleBinding` to `cluster-monitoring-view` are created so Grafana can authenticate to the in-cluster Thanos Querier.
+3. A `GrafanaDatasource` (`thanos-querier-datasource`) is registered against `https://thanos-querier.openshift-monitoring.svc.cluster.local:9091`, using a Bearer token issued to that ServiceAccount.
+4. Two `GrafanaDashboard` resources (`poc-vm-overview-operator`, `poc-ocpv-overview-operator`) are created with the same PromQL queries as Dashboard 1/2 above, using the modern Grafana panel schema (`stat`, `timeseries`).
 
-All resources are created in whichever namespace the detected `Grafana` instance lives in (`poc-grafana` by convention).
+All resources are created in whichever namespace the `Grafana` instance lives in — the one just created, or an existing one if you already had one labeled `dashboards: poc-grafana` elsewhere (`poc-grafana` by convention either way).
 
 > The ServiceAccount token is generated with `oc create token --duration=8760h` (1 year). Tokens are capped by the cluster's `service-account-max-token-expiration` setting and will need to be regenerated — just rerun `12-grafana.sh` — if the cluster enforces a shorter limit or after expiry.
 
@@ -263,7 +264,8 @@ All resources are created in whichever namespace the detected `Grafana` instance
 
 ```bash
 ./12-grafana.sh
-# step 3/3 runs automatically once the Grafana Operator + instance are detected
+# step 3/4 runs automatically once the Grafana Operator is detected — it
+# creates the poc-grafana instance too if one doesn't already exist
 ```
 
 ---
@@ -312,3 +314,26 @@ oc delete grafanadatasource thanos-querier-datasource -n <grafana-namespace>
 oc delete serviceaccount poc-grafana-view -n <grafana-namespace>
 oc delete clusterrolebinding grafana-cluster-monitoring-view
 ```
+
+Neither `--cleanup` nor the manual commands above remove the `Grafana` instance itself (or its namespace) — it's treated as a shared resource other labs (e.g. [11-coo](../11-coo/11-coo.md)) may also register datasources/dashboards into. Delete it explicitly if you're done with it entirely:
+
+```bash
+oc delete grafana poc-grafana -n <grafana-namespace>
+oc delete project <grafana-namespace>   # only if nothing else uses this namespace
+```
+
+---
+
+# Using Cluster Observability Operator (COO) and Red Hat build of Perses (Recommended)
+
+The Grafana Operator used above is a **Community** Operator — it is not covered by a Red Hat subscription. Red Hat's supported alternative for custom dashboards is the **Cluster Observability Operator (COO)**, itself a Red Hat-shipped operator, together with its `Monitoring` `UIPlugin`, which enables the **Red Hat build of Perses** — a Red Hat-maintained downstream build of the CNCF Perses project. It renders dashboards natively inside **Observe → Dashboards (Perses)** in the OpenShift console and uses native Kubernetes RBAC instead of a separate Grafana user database.
+
+Full installation, datasource registration, dashboard deployment (including a way to import the same `poc-vm-overview` / `poc-ocpv-overview` dashboards defined above via COO's built-in Grafana-import tool), RBAC, and rollback steps are documented in **[operators/perses-coo.md](../operators/perses-coo.md)**.
+
+**Prerequisites:**
+
+- OpenShift 4.15+ and Cluster Observability Operator 1.5+, installed from the **Red Hat catalog** (`source: redhat-operators`) — the same COO instance used by [11-coo](../11-coo/11-coo.md)
+
+**Access (once configured per operators/perses-coo.md):**
+
+Administrator perspective → **Observe → Dashboards (Perses)** → select the dashboard from the dropdown.

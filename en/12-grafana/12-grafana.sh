@@ -3,12 +3,16 @@
 # 12-grafana.sh
 #
 # OpenShift Console built-in Monitoring Dashboards (no Grafana Operator required)
-#   1/3  Deploy poc-vm-overview dashboard (KubeVirt VM Overall Status)
-#   2/3  Deploy poc-ocpv-overview dashboard (OpenShift Virtualization Cluster Overview)
-#   3/3  Deploy the same dashboards via Grafana Operator (optional, auto-skipped
-#        if the Grafana Operator / a poc-grafana Grafana instance is not found)
+#   1/4  Deploy poc-vm-overview dashboard (KubeVirt VM Overall Status)
+#   2/4  Deploy poc-ocpv-overview dashboard (OpenShift Virtualization Cluster Overview)
+#   3/4  Deploy the same dashboards via Grafana Operator (optional, auto-skipped
+#        if the Grafana Operator itself is not installed — a poc-grafana
+#        Grafana instance is created automatically if one doesn't exist yet)
+#   4/4  Deploy the same dashboards via Cluster Observability Operator (COO) +
+#        Red Hat build of Perses (optional, auto-skipped if COO / the UIPlugin
+#        CRD is not found) — see operators/perses-coo.md
 #
-# Dashboards 1/3 and 2/3 are registered as ConfigMaps in openshift-config-managed
+# Dashboards 1/4 and 2/4 are registered as ConfigMaps in openshift-config-managed
 # with the label console.openshift.io/dashboard: "true". The OpenShift web
 # console renders them directly under Observe > Dashboards (Administrator
 # perspective) using the in-cluster Thanos Querier — no Grafana instance
@@ -29,6 +33,9 @@ fi
 source "${SCRIPT_DIR}/../utils/common.sh"
 
 DASHBOARD_NS="openshift-config-managed"
+COO_NS="openshift-cluster-observability-operator"
+GRAFANA_DEFAULT_NS="poc-grafana"
+GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD:-grafana123}"
 GRAFANA_NS=""
 
 # Looks up the namespace of the Grafana instance labeled dashboards=poc-grafana
@@ -36,6 +43,62 @@ GRAFANA_NS=""
 detect_grafana_instance() {
     GRAFANA_NS=$(oc get grafana --all-namespaces -l dashboards=poc-grafana \
         -o jsonpath='{.items[0].metadata.namespace}' 2>/dev/null || true)
+}
+
+# Ensures a Grafana instance labeled dashboards=poc-grafana exists, creating one
+# in GRAFANA_DEFAULT_NS (matching operators/grafana-operator.md) if not found.
+# Sets GRAFANA_NS on success; returns non-zero if no instance could be created.
+ensure_grafana_instance() {
+    detect_grafana_instance
+    if [ -n "${GRAFANA_NS:-}" ]; then
+        print_ok "Grafana instance detected in namespace ${GRAFANA_NS}"
+        return 0
+    fi
+
+    print_info "No Grafana instance labeled dashboards=poc-grafana found — creating one in namespace ${GRAFANA_DEFAULT_NS}."
+
+    if oc get namespace "$GRAFANA_DEFAULT_NS" &>/dev/null; then
+        print_ok "Namespace ${GRAFANA_DEFAULT_NS} already exists — skipping"
+    else
+        oc new-project "$GRAFANA_DEFAULT_NS" > /dev/null
+        print_ok "Namespace ${GRAFANA_DEFAULT_NS} created"
+    fi
+
+    if cat <<EOF | oc apply -f - > /dev/null
+apiVersion: grafana.integreatly.org/v1beta1
+kind: Grafana
+metadata:
+  name: poc-grafana
+  namespace: ${GRAFANA_DEFAULT_NS}
+  labels:
+    dashboards: poc-grafana
+spec:
+  config:
+    auth:
+      disable_login_form: "false"
+    security:
+      admin_user: admin
+      admin_password: ${GRAFANA_ADMIN_PASSWORD}
+  route:
+    spec:
+      tls:
+        termination: edge
+EOF
+    then
+        print_ok "Grafana instance poc-grafana created in namespace ${GRAFANA_DEFAULT_NS} (admin / ${GRAFANA_ADMIN_PASSWORD})"
+    else
+        print_error "Failed to create the Grafana instance."
+        print_info "  Check that the Grafana Operator's OperatorGroup watches namespace ${GRAFANA_DEFAULT_NS} — see operators/grafana-operator.md."
+        return 1
+    fi
+
+    detect_grafana_instance
+    if [ -z "${GRAFANA_NS:-}" ]; then
+        print_error "Grafana instance was applied but is not showing up yet."
+        print_info "  Rerun this script once 'oc get grafana -n ${GRAFANA_DEFAULT_NS}' shows it."
+        return 1
+    fi
+    return 0
 }
 
 preflight() {
@@ -66,19 +129,34 @@ preflight() {
     if [ "${GRAFANA_INSTALLED:-false}" = "true" ]; then
         detect_grafana_instance
         if [ -n "${GRAFANA_NS:-}" ]; then
-            print_ok "Grafana instance found in namespace ${GRAFANA_NS} — step 3/3 will deploy operator-based dashboards."
+            print_ok "Grafana instance found in namespace ${GRAFANA_NS} — step 3/4 will deploy operator-based dashboards."
         else
-            print_warn "Grafana Operator installed but no Grafana instance labeled dashboards=poc-grafana found — step 3/3 will be skipped."
-            print_info "  See operators/grafana-operator.md to create one."
+            print_info "Grafana Operator installed but no Grafana instance found — step 3/4 will create one (namespace ${GRAFANA_DEFAULT_NS}) and deploy dashboards into it."
         fi
     else
-        print_warn "Grafana Operator not installed — step 3/3 (operator-based dashboards) will be skipped."
+        print_warn "Grafana Operator not installed — step 3/4 (operator-based dashboards) will be skipped."
         print_info "  See operators/grafana-operator.md for installation."
+    fi
+
+    # Auto-detect Cluster Observability Operator (Red Hat catalog) from cluster CSV if not in env.conf
+    if [ "${COO_INSTALLED:-false}" != "true" ]; then
+        if oc get csv --all-namespaces --no-headers 2>/dev/null \
+            | grep -qi "cluster-observability-operator"; then
+            COO_INSTALLED=true
+            print_ok "Cluster Observability Operator auto-detected (CSV)"
+        fi
+    fi
+
+    if [ "${COO_INSTALLED:-false}" = "true" ] && oc get crd uiplugins.observability.openshift.io &>/dev/null; then
+        print_ok "Cluster Observability Operator + UIPlugin CRD confirmed — step 4/4 will deploy Perses-based dashboards."
+    else
+        print_warn "Cluster Observability Operator (or its UIPlugin CRD) not found — step 4/4 will be skipped."
+        print_info "  See operators/perses-coo.md for installation (requires OpenShift 4.15+ / COO 1.5+)."
     fi
 }
 
 step_dashboard_vm() {
-    print_step "1/3  Deploy KubeVirt VM Overall Status dashboard (poc-vm-overview)"
+    print_step "1/4  Deploy KubeVirt VM Overall Status dashboard (poc-vm-overview)"
 
     # Dashboard JSON (single-quoted heredoc — \$datasource/\$namespace/\$vm are
     # Grafana-style template variables understood by the console renderer,
@@ -570,7 +648,7 @@ DASHBOARD_EOF
 }
 
 step_dashboard_ocpv() {
-    print_step "2/3  Deploy OpenShift Virtualization Cluster Overview dashboard (poc-ocpv-overview)"
+    print_step "2/4  Deploy OpenShift Virtualization Cluster Overview dashboard (poc-ocpv-overview)"
 
     cat > ./poc-ocpv-overview.json << 'DASHBOARD_EOF'
 {
@@ -850,7 +928,7 @@ DASHBOARD_EOF
 }
 
 step_operator_dashboards() {
-    print_step "3/3  Deploy the same dashboards via Grafana Operator (optional)"
+    print_step "3/4  Deploy the same dashboards via Grafana Operator (optional)"
 
     if [ "${GRAFANA_INSTALLED:-false}" != "true" ]; then
         print_warn "Grafana Operator not installed — skipping."
@@ -858,13 +936,7 @@ step_operator_dashboards() {
         return
     fi
 
-    detect_grafana_instance
-    if [ -z "${GRAFANA_NS:-}" ]; then
-        print_warn "No Grafana instance labeled dashboards=poc-grafana found — skipping."
-        print_info "  See operators/grafana-operator.md to create one."
-        return
-    fi
-    print_ok "Grafana instance detected in namespace ${GRAFANA_NS}"
+    ensure_grafana_instance || return
 
     # ServiceAccount + ClusterRoleBinding so Grafana can authenticate to the
     # in-cluster Thanos Querier (cluster-monitoring-view is read-only).
@@ -1199,6 +1271,468 @@ DASHBOARD_EOF
     fi
 }
 
+step_perses_dashboards() {
+    print_step "4/4  Deploy the same dashboards via COO + Red Hat build of Perses (optional)"
+
+    if [ "${COO_INSTALLED:-false}" != "true" ] || ! oc get crd uiplugins.observability.openshift.io &>/dev/null; then
+        print_warn "Cluster Observability Operator (or its UIPlugin CRD) not found — skipping."
+        print_info "  See operators/perses-coo.md for installation."
+        return
+    fi
+
+    # Enable the Perses dashboarding UI (Observe > Dashboards (Perses))
+    cat <<EOF | oc apply -f - > /dev/null || { print_warn "Failed to apply UIPlugin monitoring — check COO version (needs 1.5+)"; return; }
+apiVersion: observability.openshift.io/v1alpha1
+kind: UIPlugin
+metadata:
+  name: monitoring
+spec:
+  type: Monitoring
+  monitoring:
+    perses:
+      enabled: true
+EOF
+    print_ok "UIPlugin monitoring (Perses) enabled"
+
+    if ! oc get namespace "$COO_NS" &>/dev/null; then
+        print_warn "Namespace ${COO_NS} not found yet — Perses may still be starting. Skipping dashboard/datasource registration for now."
+        print_info "  Re-run this script once 'oc get pods -n ${COO_NS} | grep perses' shows Running."
+        return
+    fi
+
+    # Register the in-cluster Thanos Querier as a cluster-wide datasource.
+    # TLS-only (service-ca); if queries come back "Unauthorized", Thanos Querier
+    # needs a bearer-token identity bound to cluster-monitoring-view — see the
+    # troubleshooting note in operators/perses-coo.md.
+    if oc get persesglobaldatasource thanos-querier-global-datasource &>/dev/null; then
+        print_ok "PersesGlobalDatasource thanos-querier-global-datasource already exists — skipping"
+    else
+        cat <<EOF | oc apply -f - > /dev/null && DS_APPLIED=true || DS_APPLIED=false
+apiVersion: perses.dev/v1alpha2
+kind: PersesGlobalDatasource
+metadata:
+  name: thanos-querier-global-datasource
+spec:
+  config:
+    display:
+      name: "Thanos Querier"
+    default: true
+    plugin:
+      kind: "PrometheusDatasource"
+      spec:
+        proxy:
+          kind: HTTPProxy
+          spec:
+            url: https://thanos-querier.openshift-monitoring.svc.cluster.local:9091
+  client:
+    tls:
+      enable: true
+      caCert:
+        type: file
+        certPath: /ca/service-ca.crt
+EOF
+        if [ "$DS_APPLIED" = "true" ]; then
+            print_ok "PersesGlobalDatasource thanos-querier-global-datasource registered"
+        else
+            print_warn "Failed to create PersesGlobalDatasource — see operators/perses-coo.md"
+        fi
+    fi
+
+    cat > ./poc-vm-overview-perses.yaml <<EOF
+apiVersion: perses.dev/v1alpha2
+kind: PersesDashboard
+metadata:
+  name: poc-vm-overview-perses
+  namespace: ${COO_NS}
+spec:
+  config:
+    display:
+      name: "KubeVirt VM Overall Status (Perses)"
+    duration: 1h
+    variables:
+      - kind: ListVariable
+        spec:
+          name: namespace
+          allowMultiple: true
+          allowAllValue: true
+          plugin:
+            kind: PrometheusLabelValuesVariable
+            spec:
+              labelName: namespace
+              matchers:
+                - kubevirt_vmi_info
+      - kind: ListVariable
+        spec:
+          name: vm
+          allowMultiple: true
+          allowAllValue: true
+          plugin:
+            kind: PrometheusLabelValuesVariable
+            spec:
+              labelName: name
+              matchers:
+                - kubevirt_vmi_info
+    panels:
+      runningStat:
+        kind: Panel
+        spec:
+          display:
+            name: "Running — Cluster Total"
+          plugin:
+            kind: StatChart
+            spec: {}
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: sum(kubevirt_vmi_phase_count{phase=~"Running|running"}) or vector(0)
+      pausedStat:
+        kind: Panel
+        spec:
+          display:
+            name: "Paused — Cluster Total"
+          plugin:
+            kind: StatChart
+            spec: {}
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: sum(kubevirt_vmi_phase_count{phase=~"Paused|paused"}) or vector(0)
+      abnormalStat:
+        kind: Panel
+        spec:
+          display:
+            name: "Abnormal (Pending/Failed) — Cluster Total"
+          plugin:
+            kind: StatChart
+            spec: {}
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: sum(kubevirt_vmi_phase_count{phase!~"Running|running|Paused|paused"}) or vector(0)
+      totalStat:
+        kind: Panel
+        spec:
+          display:
+            name: "Total Active VMI — Cluster Total"
+          plugin:
+            kind: StatChart
+            spec: {}
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: count(kubevirt_vmi_info) or vector(0)
+      cpuChart:
+        kind: Panel
+        spec:
+          display:
+            name: "CPU Utilization (vCPU seconds/s)"
+          plugin:
+            kind: TimeSeriesChart
+            spec: {}
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: rate(kubevirt_vmi_cpu_usage_seconds_total{namespace=~"\$namespace", name=~"\$vm"}[5m])
+      memUsageChart:
+        kind: Panel
+        spec:
+          display:
+            name: "Memory Usage (Resident)"
+          plugin:
+            kind: TimeSeriesChart
+            spec: {}
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: kubevirt_vmi_memory_resident_bytes{namespace=~"\$namespace", name=~"\$vm"}
+      memUtilChart:
+        kind: Panel
+        spec:
+          display:
+            name: "Memory Utilization (%)"
+          plugin:
+            kind: TimeSeriesChart
+            spec: {}
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: kubevirt_vmi_memory_resident_bytes{namespace=~"\$namespace", name=~"\$vm"} / (kubevirt_vmi_memory_resident_bytes{namespace=~"\$namespace", name=~"\$vm"} + kubevirt_vmi_memory_available_bytes{namespace=~"\$namespace", name=~"\$vm"})
+      netRxChart:
+        kind: Panel
+        spec:
+          display:
+            name: "Network Receive (RX)"
+          plugin:
+            kind: TimeSeriesChart
+            spec: {}
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: rate(kubevirt_vmi_network_receive_bytes_total{namespace=~"\$namespace", name=~"\$vm"}[5m])
+      netTxChart:
+        kind: Panel
+        spec:
+          display:
+            name: "Network Transmit (TX)"
+          plugin:
+            kind: TimeSeriesChart
+            spec: {}
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: rate(kubevirt_vmi_network_transmit_bytes_total{namespace=~"\$namespace", name=~"\$vm"}[5m])
+      diskReadChart:
+        kind: Panel
+        spec:
+          display:
+            name: "Storage Read"
+          plugin:
+            kind: TimeSeriesChart
+            spec: {}
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: rate(kubevirt_vmi_storage_read_traffic_bytes_total{namespace=~"\$namespace", name=~"\$vm"}[5m])
+      diskWriteChart:
+        kind: Panel
+        spec:
+          display:
+            name: "Storage Write"
+          plugin:
+            kind: TimeSeriesChart
+            spec: {}
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: rate(kubevirt_vmi_storage_write_traffic_bytes_total{namespace=~"\$namespace", name=~"\$vm"}[5m])
+    layouts:
+      - kind: Grid
+        spec:
+          display:
+            title: "VM Status Summary"
+          items:
+            - {x: 0, y: 0, width: 6, height: 4, content: {\$ref: "#/spec/config/panels/runningStat"}}
+            - {x: 6, y: 0, width: 6, height: 4, content: {\$ref: "#/spec/config/panels/pausedStat"}}
+            - {x: 12, y: 0, width: 6, height: 4, content: {\$ref: "#/spec/config/panels/abnormalStat"}}
+            - {x: 18, y: 0, width: 6, height: 4, content: {\$ref: "#/spec/config/panels/totalStat"}}
+      - kind: Grid
+        spec:
+          display:
+            title: "CPU"
+          items:
+            - {x: 0, y: 0, width: 24, height: 8, content: {\$ref: "#/spec/config/panels/cpuChart"}}
+      - kind: Grid
+        spec:
+          display:
+            title: "Memory"
+          items:
+            - {x: 0, y: 0, width: 12, height: 8, content: {\$ref: "#/spec/config/panels/memUsageChart"}}
+            - {x: 12, y: 0, width: 12, height: 8, content: {\$ref: "#/spec/config/panels/memUtilChart"}}
+      - kind: Grid
+        spec:
+          display:
+            title: "Network I/O"
+          items:
+            - {x: 0, y: 0, width: 12, height: 8, content: {\$ref: "#/spec/config/panels/netRxChart"}}
+            - {x: 12, y: 0, width: 12, height: 8, content: {\$ref: "#/spec/config/panels/netTxChart"}}
+      - kind: Grid
+        spec:
+          display:
+            title: "Storage I/O"
+          items:
+            - {x: 0, y: 0, width: 12, height: 8, content: {\$ref: "#/spec/config/panels/diskReadChart"}}
+            - {x: 12, y: 0, width: 12, height: 8, content: {\$ref: "#/spec/config/panels/diskWriteChart"}}
+EOF
+
+    oc apply -f ./poc-vm-overview-perses.yaml > /dev/null \
+        && print_ok "PersesDashboard poc-vm-overview-perses deployed" \
+        || print_warn "Failed to apply poc-vm-overview-perses.yaml — check 'oc explain persesdashboard.spec.config' against your COO version"
+
+    cat > ./poc-ocpv-overview-perses.yaml <<EOF
+apiVersion: perses.dev/v1alpha2
+kind: PersesDashboard
+metadata:
+  name: poc-ocpv-overview-perses
+  namespace: ${COO_NS}
+spec:
+  config:
+    display:
+      name: "OpenShift Virtualization Cluster Overview (Perses)"
+    duration: 1h
+    panels:
+      vmByNode:
+        kind: Panel
+        spec:
+          display:
+            name: "VM Count by Node"
+          plugin:
+            kind: TimeSeriesChart
+            spec: {}
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: count(kubevirt_vmi_info) by (node)
+      phaseBreakdown:
+        kind: Panel
+        spec:
+          display:
+            name: "VMI Count by Phase (Cluster Total)"
+          plugin:
+            kind: TimeSeriesChart
+            spec: {}
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: sum(kubevirt_vmi_phase_count) by (phase)
+      migPendingStat:
+        kind: Panel
+        spec:
+          display:
+            name: "Pending"
+          plugin:
+            kind: StatChart
+            spec: {}
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: sum(kubevirt_vmi_migrations_in_pending_phase) or vector(0)
+      migSchedulingStat:
+        kind: Panel
+        spec:
+          display:
+            name: "Scheduling"
+          plugin:
+            kind: StatChart
+            spec: {}
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: sum(kubevirt_vmi_migrations_in_scheduling_phase) or vector(0)
+      migRunningStat:
+        kind: Panel
+        spec:
+          display:
+            name: "Running"
+          plugin:
+            kind: StatChart
+            spec: {}
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: sum(kubevirt_vmi_migrations_in_running_phase) or vector(0)
+      migFailedStat:
+        kind: Panel
+        spec:
+          display:
+            name: "Failed (Total)"
+          plugin:
+            kind: StatChart
+            spec: {}
+          queries:
+            - kind: TimeSeriesQuery
+              spec:
+                plugin:
+                  kind: PrometheusTimeSeriesQuery
+                  spec:
+                    query: sum(kubevirt_vmi_migrations_failed) or vector(0)
+    layouts:
+      - kind: Grid
+        spec:
+          display:
+            title: "VM Distribution"
+          items:
+            - {x: 0, y: 0, width: 24, height: 8, content: {\$ref: "#/spec/config/panels/vmByNode"}}
+      - kind: Grid
+        spec:
+          display:
+            title: "VM Phase Breakdown"
+          items:
+            - {x: 0, y: 0, width: 24, height: 8, content: {\$ref: "#/spec/config/panels/phaseBreakdown"}}
+      - kind: Grid
+        spec:
+          display:
+            title: "Live Migration Status"
+          items:
+            - {x: 0, y: 0, width: 6, height: 4, content: {\$ref: "#/spec/config/panels/migPendingStat"}}
+            - {x: 6, y: 0, width: 6, height: 4, content: {\$ref: "#/spec/config/panels/migSchedulingStat"}}
+            - {x: 12, y: 0, width: 6, height: 4, content: {\$ref: "#/spec/config/panels/migRunningStat"}}
+            - {x: 18, y: 0, width: 6, height: 4, content: {\$ref: "#/spec/config/panels/migFailedStat"}}
+EOF
+
+    oc apply -f ./poc-ocpv-overview-perses.yaml > /dev/null \
+        && print_ok "PersesDashboard poc-ocpv-overview-perses deployed" \
+        || print_warn "Failed to apply poc-ocpv-overview-perses.yaml — check 'oc explain persesdashboard.spec.config' against your COO version"
+
+    # Grant view access via native Kubernetes RBAC (no separate Grafana user DB)
+    cat <<EOF | oc apply -f - > /dev/null \
+        && print_ok "RoleBinding poc-perses-dashboard-viewer applied in ${COO_NS}" \
+        || print_warn "Failed to apply RoleBinding poc-perses-dashboard-viewer — grant persesdashboard-viewer-role manually"
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: poc-perses-dashboard-viewer
+  namespace: ${COO_NS}
+subjects:
+  - kind: Group
+    name: system:authenticated
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: persesdashboard-viewer-role
+  apiGroup: rbac.authorization.k8s.io
+EOF
+    print_info "  Dashboard: Console → Observe → Dashboards (Perses) → KubeVirt VM Overall Status (Perses)"
+    print_info "  Dashboard: Console → Observe → Dashboards (Perses) → OpenShift Virtualization Cluster Overview (Perses)"
+}
+
 print_summary() {
     echo ""
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -1224,6 +1758,13 @@ print_summary() {
         echo ""
     fi
 
+    if oc get uiplugin monitoring &>/dev/null; then
+        echo -e "  Perses dashboards also deployed in namespace ${COO_NS}:"
+        echo -e "    ${CYAN}oc get persesdashboard,persesglobaldatasource -n ${COO_NS}${NC}"
+        echo -e "  Perses UI: ${CYAN}Observe → Dashboards (Perses)${NC} — see operators/perses-coo.md for details."
+        echo ""
+    fi
+
     echo -e "  For details: refer to 12-grafana/12-grafana.md"
     echo ""
 }
@@ -1244,6 +1785,11 @@ cleanup() {
     fi
     oc delete clusterrolebinding grafana-cluster-monitoring-view --ignore-not-found 2>/dev/null || true
 
+    oc delete persesdashboard poc-vm-overview-perses poc-ocpv-overview-perses -n "$COO_NS" --ignore-not-found 2>/dev/null || true
+    oc delete persesglobaldatasource thanos-querier-global-datasource --ignore-not-found 2>/dev/null || true
+    oc delete rolebinding poc-perses-dashboard-viewer -n "$COO_NS" --ignore-not-found 2>/dev/null || true
+    oc delete uiplugin monitoring --ignore-not-found 2>/dev/null || true
+
     print_ok "12-grafana resources deleted"
 }
 
@@ -1257,6 +1803,7 @@ main() {
     step_dashboard_vm
     step_dashboard_ocpv
     step_operator_dashboards
+    step_perses_dashboards
     print_summary
 }
 

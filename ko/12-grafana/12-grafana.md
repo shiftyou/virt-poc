@@ -8,7 +8,7 @@ Grafana Operator, Grafana 인스턴스, Route 없이 OpenShift Virtualization �
 
 OpenShift 웹 콘솔은 `openshift-config-managed` Namespace에 `console.openshift.io/dashboard: "true"` 라벨이 붙은 `ConfigMap`을 발견하면 Grafana 없이도 자체적으로 커스텀 모니터링 대시보드를 렌더링합니다. `.json`으로 끝나는 `data` 키에는 예전 Grafana 6.x 스타일 대시보드 정의(`rows`/`panels`/`span`)를 담고, 콘솔은 내장 대시보드와 동일한 데이터소스인 클러스터 내장 **Thanos Querier**를 통해 모든 PromQL 쿼리를 실행합니다.
 
-이 섹션에서 다루는 내용 (`12-grafana.sh` 1/3–2/3 단계):
+이 섹션에서 다루는 내용 (`12-grafana.sh` 1/4–2/4 단계):
 
 - `openshift-config-managed`에 쓰기 권한이 있는지 사전 점검
 - Dashboard 1: **KubeVirt VM Overall Status** (`poc-vm-overview`) — VM 상태 요약, VM별 CPU/Memory/Network/Storage
@@ -21,7 +21,7 @@ OpenShift 웹 콘솔은 `openshift-config-managed` Namespace에 `console.openshi
 - 공식 문서가 충분하지 않은 콘솔 확장 포인트로, 완전히 제품화된 API가 아니어서 OpenShift 버전에 따라 ConfigMap 스키마가 바뀔 수 있습니다.
 - `openshift-config-managed`에 쓰려면 cluster-admin 권한이 필요합니다.
 
-완전한 Grafana 패널 기능, Alerting, 클러스터 외부를 가리키는 데이터소스가 필요하다면 아래 [Grafana Operator 사용](#grafana-operator-사용)을 참고하세요.
+완전한 Grafana 패널 기능, Alerting, 클러스터 외부를 가리키는 데이터소스가 필요하다면 아래 [Grafana Operator 사용](#grafana-operator-사용)을 참고하세요. Grafana 생태계의 성숙도보다 Red Hat 구독 지원 여부가 더 중요하다면 [Cluster Observability Operator (COO) 및 Red Hat build of Perses 활용](#cluster-observability-operator-coo-및-red-hat-build-of-perses-활용-가장-추천)을 대신 참고하세요 — 아래에서 설치하는 Grafana Operator는 **Community** Operator로, Red Hat 구독 지원 대상이 아닙니다.
 
 ---
 
@@ -240,20 +240,21 @@ oc delete configmap poc-ocpv-overview-dashboard -n openshift-config-managed
 
 ## 사전 요구사항
 
-- Grafana Operator가 설치되어 있고, `dashboards: poc-grafana` 레이블을 가진 `Grafana` 인스턴스가 생성되어 있어야 함 — [operators/grafana-operator.md](../operators/grafana-operator.md) 참조
+- Grafana Operator가 설치되어 있어야 함 — [operators/grafana-operator.md](../operators/grafana-operator.md) 참조. `dashboards: poc-grafana` 레이블을 가진 `Grafana` 인스턴스를 미리 만들어 둘 필요는 **없습니다** — 찾지 못하면 `12-grafana.sh`가 자동으로 하나 생성합니다(namespace `poc-grafana`).
 - `env.conf`에 `GRAFANA_INSTALLED=true` (12-grafana.sh 실행 시 설치된 CSV로부터 자동 감지됨)
 
 ---
 
 ## 동작 원리
 
-`12-grafana.sh`는 이를 3/3 단계로 실행하며, Grafana Operator나 Grafana 인스턴스를 찾지 못하면 자동으로 생략합니다:
+`12-grafana.sh`는 이를 3/4 단계로 실행하며, Grafana Operator 자체가 없을 때만 자동으로 생략합니다:
 
-1. Grafana가 클러스터 내장 Thanos Querier에 인증할 수 있도록 전용 `ServiceAccount`(`poc-grafana-view`)와 `cluster-monitoring-view`에 대한 `ClusterRoleBinding`을 생성합니다.
-2. 해당 ServiceAccount에서 발급한 Bearer 토큰을 사용하여 `https://thanos-querier.openshift-monitoring.svc.cluster.local:9091`을 가리키는 `GrafanaDatasource`(`thanos-querier-datasource`)를 등록합니다.
-3. 위 Dashboard 1/2와 동일한 PromQL 쿼리를 사용하되 최신 Grafana 패널 스키마(`stat`, `timeseries`)로 작성된 두 개의 `GrafanaDashboard` 리소스(`poc-vm-overview-operator`, `poc-ocpv-overview-operator`)를 생성합니다.
+1. `dashboards: poc-grafana` 레이블을 가진 `Grafana` 인스턴스가 아직 없으면 새로 생성합니다 — namespace `poc-grafana`, `admin` / `env.conf`의 `GRAFANA_ADMIN_PASSWORD`(기본값 `grafana123`), edge 종료 Route 구성. [operators/grafana-operator.md](../operators/grafana-operator.md)에 문서화된 것과 동일한 구성이며, 스크립트가 없을 때만 대신 적용해 줍니다.
+2. Grafana가 클러스터 내장 Thanos Querier에 인증할 수 있도록 전용 `ServiceAccount`(`poc-grafana-view`)와 `cluster-monitoring-view`에 대한 `ClusterRoleBinding`을 생성합니다.
+3. 해당 ServiceAccount에서 발급한 Bearer 토큰을 사용하여 `https://thanos-querier.openshift-monitoring.svc.cluster.local:9091`을 가리키는 `GrafanaDatasource`(`thanos-querier-datasource`)를 등록합니다.
+4. 위 Dashboard 1/2와 동일한 PromQL 쿼리를 사용하되 최신 Grafana 패널 스키마(`stat`, `timeseries`)로 작성된 두 개의 `GrafanaDashboard` 리소스(`poc-vm-overview-operator`, `poc-ocpv-overview-operator`)를 생성합니다.
 
-모든 리소스는 감지된 `Grafana` 인스턴스가 위치한 namespace(관례상 `poc-grafana`)에 생성됩니다.
+모든 리소스는 `Grafana` 인스턴스가 위치한 namespace에 생성됩니다 — 방금 새로 만든 인스턴스이거나, 이미 다른 곳에 `dashboards: poc-grafana` 레이블로 존재하던 인스턴스일 수 있습니다(어느 쪽이든 관례상 `poc-grafana`).
 
 > ServiceAccount 토큰은 `oc create token --duration=8760h`(1년)로 발급됩니다. 토큰은 클러스터의 `service-account-max-token-expiration` 설정에 따라 제한되며, 클러스터가 더 짧은 제한을 강제하거나 토큰이 만료된 경우 `12-grafana.sh`를 다시 실행하여 재발급하면 됩니다.
 
@@ -263,7 +264,8 @@ oc delete configmap poc-ocpv-overview-dashboard -n openshift-config-managed
 
 ```bash
 ./12-grafana.sh
-# Grafana Operator + 인스턴스가 감지되면 3/3 단계가 자동으로 실행됩니다
+# Grafana Operator가 감지되면 3/4 단계가 자동으로 실행됩니다 — poc-grafana
+# 인스턴스가 아직 없으면 함께 생성합니다
 ```
 
 ---
@@ -312,3 +314,26 @@ oc delete grafanadatasource thanos-querier-datasource -n <grafana-namespace>
 oc delete serviceaccount poc-grafana-view -n <grafana-namespace>
 oc delete clusterrolebinding grafana-cluster-monitoring-view
 ```
+
+`--cleanup`과 위 수동 명령 모두 `Grafana` 인스턴스 자체(및 그 namespace)는 삭제하지 않습니다 — 다른 랩([11-coo](../11-coo/11-coo.md) 등)도 여기에 datasource/dashboard를 함께 등록할 수 있는 공용 리소스로 취급하기 때문입니다. 완전히 정리하려면 명시적으로 삭제하세요:
+
+```bash
+oc delete grafana poc-grafana -n <grafana-namespace>
+oc delete project <grafana-namespace>   # 이 namespace를 다른 용도로 쓰지 않을 때만
+```
+
+---
+
+# Cluster Observability Operator (COO) 및 Red Hat build of Perses 활용 (가장 추천)
+
+위에서 설치한 Grafana Operator는 **Community** Operator입니다 — Red Hat 구독 지원 대상이 아닙니다. Red Hat이 공식 지원하는 커스텀 대시보드 대안은 **Cluster Observability Operator (COO)** — 이 자체가 Red Hat이 제공하는 Operator입니다 — 와 그 `Monitoring` `UIPlugin`이 활성화하는 **Red Hat build of Perses**입니다. 이는 CNCF Perses 프로젝트를 Red Hat이 유지보수하는 다운스트림 빌드로, OpenShift 콘솔의 **Observe → Dashboards (Perses)** 안에서 대시보드를 네이티브로 렌더링하며, 별도의 Grafana 사용자 DB 대신 Kubernetes 네이티브 RBAC를 사용합니다.
+
+설치, 데이터소스 등록, 대시보드 배포(위에서 정의한 `poc-vm-overview` / `poc-ocpv-overview` 대시보드를 COO 내장 Grafana-import 도구로 그대로 가져오는 방법 포함), RBAC, 롤백 절차는 **[operators/perses-coo.md](../operators/perses-coo.md)**에 전체 문서화되어 있습니다.
+
+**사전 요구사항:**
+
+- OpenShift 4.15+ 및 Cluster Observability Operator 1.5+, **Red Hat 카탈로그**(`source: redhat-operators`)에서 설치됨 — [11-coo](../11-coo/11-coo.md)에서 사용하는 것과 동일한 COO 인스턴스
+
+**접속 (operators/perses-coo.md에 따라 구성한 이후):**
+
+Administrator perspective → **Observe → Dashboards (Perses)** → 드롭다운에서 대시보드 선택.
