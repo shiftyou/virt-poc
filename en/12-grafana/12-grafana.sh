@@ -1444,7 +1444,7 @@ step_statusmap_dashboard() {
   "templating": {
     "list": [
       {"current": {"selected": false, "text": "Thanos-Querier", "value": "Thanos-Querier"}, "hide": 0, "includeAll": false, "label": "Datasource", "multi": false, "name": "datasource", "options": [], "query": "prometheus", "refresh": 1, "type": "datasource"},
-      {"allValue": "", "current": {"selected": true, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "${datasource}"}, "definition": "label_values(kubevirt_vmi_info, node)", "hide": 0, "includeAll": true, "label": "Node", "multi": true, "name": "node", "options": [], "query": {"query": "label_values(kubevirt_vmi_info, node)", "refId": "Q"}, "refresh": 2, "regex": "", "sort": 1, "type": "query"}
+      {"allValue": ".*", "current": {"selected": true, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "${datasource}"}, "definition": "label_values(kubevirt_vmi_info, node)", "hide": 0, "includeAll": true, "label": "Node", "multi": true, "name": "node", "options": [], "query": {"query": "label_values(kubevirt_vmi_info, node)", "refId": "Q"}, "refresh": 2, "regex": "", "sort": 1, "type": "query"}
     ]
   },
   "time": {"from": "now-5m", "to": "now"},
