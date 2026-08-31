@@ -8,6 +8,19 @@ env.conf
 [0-9][0-9]-*/*.yaml
 [0-9][0-9]-*/*.json
 !21-upgrade/*.yaml
+en/[0-9][0-9]-*/*.yaml
+en/[0-9][0-9]-*/*.json
+!en/21-upgrade/*.yaml
+ko/[0-9][0-9]-*/*.yaml
+ko/[0-9][0-9]-*/*.json
+!ko/21-upgrade/*.yaml
+
+# en/ko 루트의 실행 결과물 YAML
+en/*.yaml
+ko/*.yaml
+
+# poc-setup 디렉토리 (POC 실행 중 생성되는 결과물)
+poc-setup/
 
 # download.sh 로 생성되는 다운로드 파일
 downloads/

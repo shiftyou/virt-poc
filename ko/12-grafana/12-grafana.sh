@@ -3,16 +3,18 @@
 # 12-grafana.sh
 #
 # OpenShift 콘솔 내장 모니터링 대시보드 (Grafana Operator 없이도 동작)
-#   1/4  poc-vm-overview 대시보드 배포 (KubeVirt VM 전체 상태)
-#   2/4  poc-ocpv-overview 대시보드 배포 (OpenShift Virtualization 클러스터 개요)
-#   3/4  동일한 대시보드를 Grafana Operator 방식으로도 배포 (선택 사항 —
+#   1/5  poc-vm-overview 대시보드 배포 (KubeVirt VM 전체 상태)
+#   2/5  poc-ocpv-overview 대시보드 배포 (OpenShift Virtualization 클러스터 개요)
+#   3/5  동일한 대시보드를 Grafana Operator 방식으로도 배포 (선택 사항 —
 #        Grafana Operator 자체가 없으면 자동 생략 — poc-grafana Grafana
 #        인스턴스가 아직 없으면 자동으로 생성합니다)
-#   4/4  동일한 대시보드를 Cluster Observability Operator (COO) + Red Hat
+#   4/5  VM 상태 맵 대시보드 배포 — 노드별 VM 헥사곤 배치도 (Polystat
+#        플러그인, Grafana Operator 필수 — 3/5 단계에서 설치)
+#   5/5  동일한 대시보드를 Cluster Observability Operator (COO) + Red Hat
 #        build of Perses 방식으로도 배포 (선택 사항 — COO나 UIPlugin CRD가
 #        없으면 자동 생략) — operators/perses-coo.md 참조
 #
-# 1/4, 2/4 단계의 대시보드는 openshift-config-managed Namespace에
+# 1/5, 2/5 단계의 대시보드는 openshift-config-managed Namespace에
 # console.openshift.io/dashboard: "true" 라벨을 가진 ConfigMap으로 등록됩니다.
 # OpenShift 웹 콘솔이 이를 직접 인식하여 Observe > Dashboards(Administrator
 # perspective)에 렌더링하며, 데이터소스는 클러스터 내장 Thanos Querier를
@@ -30,7 +32,112 @@ if [ -f "$ENV_FILE" ]; then
     set -a; source "$ENV_FILE"; set +a
 fi
 
-source "${SCRIPT_DIR}/../utils/common.sh"
+if [ -f "${SCRIPT_DIR}/../utils/common.sh" ]; then
+    source "${SCRIPT_DIR}/../utils/common.sh"
+else
+    # ── 독립 실행 모드: common.sh 없이 인라인 헬퍼 사용 ──
+    RED='\033[0;31m'; GREEN='\033[0;32m'; DIM='\033[2m'
+    YELLOW='\033[1;33m'; BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033[0m'
+    print_info()  { echo -e "${BLUE}[정보]${NC} $1"; }
+    print_ok()    { echo -e "${GREEN}[ OK ]${NC} $1"; }
+    print_warn()  { echo -e "${YELLOW}[경고]${NC} $1"; }
+    print_error() { echo -e "${RED}[오류]${NC} $1"; }
+    print_step()  { echo -e "\n${CYAN}━━━ $1 ━━━${NC}"; }
+    print_header() {
+        echo -e "\n${CYAN}================================================================${NC}"
+        echo -e "${CYAN}  $1${NC}"
+        echo -e "${CYAN}================================================================${NC}\n"
+    }
+    print_step_header() {
+        echo -e "\n${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${CYAN}  $1  $2${NC}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+    }
+    ask() {
+        local prompt="$1" default="$2" var_name="$3" is_secret="${4:-false}"
+        if [ "$is_secret" = "true" ]; then
+            echo -n -e "${YELLOW}  $prompt${NC} [기본값: ****]: "; read -s input_val; echo
+        else
+            echo -n -e "${YELLOW}  $prompt${NC} [기본값: ${default}]: "; read input_val
+        fi
+        [ -z "$input_val" ] && input_val="$default"
+        eval "$var_name='$input_val'"
+    }
+    save_to_env() {
+        local key="$1" value="$2" env_file="${3:-${ENV_FILE:-}}"
+        [ -z "$env_file" ] || [ ! -f "$env_file" ] && return 0
+        if grep -q "^${key}=" "$env_file" 2>/dev/null; then
+            if [[ "$OSTYPE" == darwin* ]]; then sed -i '' "s|^${key}=.*|${key}=${value}|" "$env_file"
+            else sed -i "s|^${key}=.*|${key}=${value}|" "$env_file"; fi
+        else echo "${key}=${value}" >> "$env_file"; fi
+    }
+    load_or_ask() {
+        local var_name="$1" prompt="$2" default="$3" is_secret="${4:-false}" current_val
+        eval "current_val=\${${var_name}:-}"; [ -n "$current_val" ] && return 0
+        ask "$prompt" "$default" "$var_name" "$is_secret"
+        eval "local _val=\$$var_name"; save_to_env "$var_name" "$_val"
+    }
+    confirm_and_apply() {
+        local file="$1" auto="${2:-true}"
+        if [ "$auto" != "true" ]; then
+            print_info "적용할 YAML:"; cat "$file"
+            read -r -p "클러스터에 적용하시겠습니까? [y/N]: " confirm
+            [[ "$confirm" != "y" && "$confirm" != "Y" ]] && { print_warn "취소됨."; return 1; }
+        fi
+        oc apply -f "$file"
+    }
+    detect_worker_nodes() {
+        WORKER_NODES=$(oc get nodes -l node-role.kubernetes.io/worker \
+            -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true)
+        TEST_NODE=$(echo "$WORKER_NODES" | awk '{print $1}')
+        [ -z "$WORKER_NODES" ] && { print_error "워커 노드를 찾을 수 없습니다."; exit 1; }
+        print_info "워커 노드: ${WORKER_NODES}"
+    }
+    auto_detect_garage() {
+        GARAGE_ENDPOINT=""; GARAGE_BUCKET="velero"; GARAGE_ACCESS_KEY="garage"
+        GARAGE_SECRET_KEY="garage123"; GARAGE_FOUND=false
+        local ns; ns=$(oc get svc -A -l app=garage -o jsonpath='{.items[0].metadata.namespace}' 2>/dev/null || true)
+        if [ -n "$ns" ]; then
+            local svc port
+            svc=$(oc get svc -n "$ns" -l app=garage -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || \
+                oc get svc -n "$ns" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+            port=$(oc get svc -n "$ns" "$svc" -o jsonpath='{.spec.ports[?(@.name=="s3-api")].port}' 2>/dev/null || echo "3900")
+            GARAGE_ENDPOINT="http://${svc}.${ns}.svc.cluster.local:${port}"
+            local sn; sn=$(oc get secret -n "$ns" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null | \
+                tr ' ' '\n' | grep -iE "garage|credentials|s3" | head -1 || true)
+            if [ -n "$sn" ]; then
+                local ak sk
+                ak=$(oc get secret -n "$ns" "$sn" -o jsonpath='{.data.accessKey}' 2>/dev/null | base64 -d 2>/dev/null || \
+                    oc get secret -n "$ns" "$sn" -o jsonpath='{.data.access_key_id}' 2>/dev/null | base64 -d 2>/dev/null || true)
+                sk=$(oc get secret -n "$ns" "$sn" -o jsonpath='{.data.secretKey}' 2>/dev/null | base64 -d 2>/dev/null || \
+                    oc get secret -n "$ns" "$sn" -o jsonpath='{.data.secret_access_key}' 2>/dev/null | base64 -d 2>/dev/null || true)
+                [ -n "$ak" ] && GARAGE_ACCESS_KEY="$ak"; [ -n "$sk" ] && GARAGE_SECRET_KEY="$sk"
+            fi
+            GARAGE_FOUND=true
+            print_info "Garage endpoint : ${GARAGE_ENDPOINT}  (ns: ${ns})"
+            print_info "Garage bucket   : ${GARAGE_BUCKET}"
+            print_info "Garage accessKey: ${GARAGE_ACCESS_KEY}"
+        else print_warn "Garage Service (app=garage) 감지 실패 → Garage 설정을 건너뜁니다."; fi
+    }
+    auto_detect_odf() {
+        ODF_S3_ENDPOINT=""; ODF_S3_BUCKET="velero"; ODF_S3_REGION="localstorage"
+        ODF_S3_ACCESS_KEY=""; ODF_S3_SECRET_KEY=""
+        local ns="openshift-storage"
+        ODF_S3_ENDPOINT=$(oc get noobaa -n "$ns" -o jsonpath='{.status.services.serviceS3.internalDNS[0]}' 2>/dev/null || true)
+        if [ -z "$ODF_S3_ENDPOINT" ]; then
+            local p; p=$(oc get svc s3 -n "$ns" -o jsonpath='{.spec.ports[?(@.name=="s3")].port}' 2>/dev/null || echo "80")
+            ODF_S3_ENDPOINT="http://s3.${ns}.svc.cluster.local:${p}"
+        fi
+        ODF_S3_ACCESS_KEY=$(oc get secret noobaa-admin -n "$ns" -o jsonpath='{.data.AWS_ACCESS_KEY_ID}' 2>/dev/null | base64 -d 2>/dev/null || true)
+        ODF_S3_SECRET_KEY=$(oc get secret noobaa-admin -n "$ns" -o jsonpath='{.data.AWS_SECRET_ACCESS_KEY}' 2>/dev/null | base64 -d 2>/dev/null || true)
+        if [ -n "$ODF_S3_ACCESS_KEY" ]; then
+            print_info "ODF MCG S3 endpoint : ${ODF_S3_ENDPOINT}"
+            print_info "ODF MCG region      : ${ODF_S3_REGION}"
+            print_info "ODF MCG bucket      : ${ODF_S3_BUCKET}"
+            print_info "ODF MCG 인증 정보   : noobaa-admin secret에서 가져옴"
+        else print_warn "ODF MCG 인증 정보 감지 실패 (noobaa-admin secret 없음)"; fi
+    }
+fi
 
 DASHBOARD_NS="openshift-config-managed"
 COO_NS="openshift-cluster-observability-operator"
@@ -130,12 +237,12 @@ preflight() {
     if [ "${GRAFANA_INSTALLED:-false}" = "true" ]; then
         detect_grafana_instance
         if [ -n "${GRAFANA_NS:-}" ]; then
-            print_ok "Grafana 인스턴스가 namespace ${GRAFANA_NS}에서 발견되었습니다 — 3/4 단계에서 Operator 기반 대시보드를 배포합니다."
+            print_ok "Grafana 인스턴스가 namespace ${GRAFANA_NS}에서 발견되었습니다 — 3/5 단계에서 Operator 기반 대시보드를 배포합니다."
         else
-            print_info "Grafana Operator는 설치되어 있지만 Grafana 인스턴스를 찾지 못했습니다 — 3/4 단계에서 새로 생성(namespace ${GRAFANA_DEFAULT_NS})한 뒤 대시보드를 배포합니다."
+            print_info "Grafana Operator는 설치되어 있지만 Grafana 인스턴스를 찾지 못했습니다 — 3/5 단계에서 새로 생성(namespace ${GRAFANA_DEFAULT_NS})한 뒤 대시보드를 배포합니다."
         fi
     else
-        print_warn "Grafana Operator가 설치되어 있지 않습니다 — 3/4 단계(Operator 기반 대시보드)는 생략됩니다."
+        print_warn "Grafana Operator가 설치되어 있지 않습니다 — 3/5~4/5 단계(Operator 기반 대시보드)는 생략됩니다."
         print_info "  설치 방법은 operators/grafana-operator.md를 참고하세요."
     fi
 
@@ -149,15 +256,15 @@ preflight() {
     fi
 
     if [ "${COO_INSTALLED:-false}" = "true" ] && oc get crd uiplugins.observability.openshift.io &>/dev/null; then
-        print_ok "Cluster Observability Operator + UIPlugin CRD 확인됨 — 4/4 단계에서 Perses 기반 대시보드를 배포합니다."
+        print_ok "Cluster Observability Operator + UIPlugin CRD 확인됨 — 5/5 단계에서 Perses 기반 대시보드를 배포합니다."
     else
-        print_warn "Cluster Observability Operator(또는 UIPlugin CRD)를 찾지 못했습니다 — 4/4 단계는 생략됩니다."
+        print_warn "Cluster Observability Operator(또는 UIPlugin CRD)를 찾지 못했습니다 — 5/5 단계는 생략됩니다."
         print_info "  설치 방법은 operators/perses-coo.md를 참고하세요 (OpenShift 4.15+ / COO 1.5+ 필요)."
     fi
 }
 
 step_dashboard_vm() {
-    print_step "1/4  KubeVirt VM 전체 상태 대시보드 배포 (poc-vm-overview)"
+    print_step "1/5  KubeVirt VM 전체 상태 대시보드 배포 (poc-vm-overview)"
 
     # Dashboard JSON (작은따옴표 heredoc — \$datasource/\$namespace/\$vm 는
     # 콘솔 렌더러가 이해하는 Grafana 스타일 템플릿 변수이며 bash 변수가
@@ -649,7 +756,7 @@ DASHBOARD_EOF
 }
 
 step_dashboard_ocpv() {
-    print_step "2/4  OpenShift Virtualization 클러스터 개요 대시보드 배포 (poc-ocpv-overview)"
+    print_step "2/5  OpenShift Virtualization 클러스터 개요 대시보드 배포 (poc-ocpv-overview)"
 
     cat > ./poc-ocpv-overview.json << 'DASHBOARD_EOF'
 {
@@ -929,7 +1036,7 @@ DASHBOARD_EOF
 }
 
 step_operator_dashboards() {
-    print_step "3/4  동일한 대시보드를 Grafana Operator 방식으로 배포 (선택 사항)"
+    print_step "3/5  동일한 대시보드를 Grafana Operator 방식으로 배포 (선택 사항)"
 
     if [ "${GRAFANA_INSTALLED:-false}" != "true" ]; then
         print_warn "Grafana Operator가 설치되어 있지 않습니다 — 생략합니다."
@@ -1272,8 +1379,221 @@ DASHBOARD_EOF
     fi
 }
 
+# Grafana 인스턴스에 grafana-polystat-panel 플러그인을 설치합니다.
+# Grafana CR의 GF_INSTALL_PLUGINS 환경변수를 통해 구성하며,
+# Grafana Operator가 Pod를 재시작하여 플러그인을 자동 설치합니다.
+ensure_polystat_plugin() {
+    local grafana_name
+    grafana_name=$(oc get grafana -n "$GRAFANA_NS" -l dashboards=poc-grafana \
+        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+
+    if [ -z "$grafana_name" ]; then
+        print_warn "Grafana 인스턴스를 찾지 못했습니다 — Polystat 플러그인을 설치할 수 없습니다."
+        return 1
+    fi
+
+    local current_plugins
+    current_plugins=$(oc get grafana "$grafana_name" -n "$GRAFANA_NS" \
+        -o jsonpath='{.spec.deployment.spec.template.spec.containers[?(@.name=="grafana")].env[?(@.name=="GF_INSTALL_PLUGINS")].value}' 2>/dev/null || true)
+
+    if echo "$current_plugins" | grep -q "grafana-polystat-panel"; then
+        print_ok "grafana-polystat-panel 플러그인이 이미 설치되어 있습니다"
+        return 0
+    fi
+
+    local new_plugins="grafana-polystat-panel"
+    [ -n "$current_plugins" ] && new_plugins="${current_plugins},grafana-polystat-panel"
+
+    if oc patch grafana "$grafana_name" -n "$GRAFANA_NS" --type=merge \
+        -p "{\"spec\":{\"deployment\":{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"grafana\",\"env\":[{\"name\":\"GF_INSTALL_PLUGINS\",\"value\":\"${new_plugins}\"}]}]}}}}}}" > /dev/null; then
+        print_ok "grafana-polystat-panel 플러그인 설치 구성 완료"
+    else
+        print_warn "Grafana CR 패치에 실패했습니다 — Grafana 인스턴스에 grafana-polystat-panel 플러그인을 수동으로 추가하세요"
+        return 1
+    fi
+
+    print_info "  Grafana Pod가 플러그인 설치 후 재시작됩니다 — 잠시 대기..."
+    local deploy_name
+    deploy_name=$(oc get deployment -n "$GRAFANA_NS" -l app="${grafana_name}" \
+        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "${grafana_name}-deployment")
+    oc rollout status "deployment/${deploy_name}" -n "$GRAFANA_NS" --timeout=180s 2>/dev/null || true
+    return 0
+}
+
+step_statusmap_dashboard() {
+    print_step "4/5  VM 상태 맵 대시보드 배포 — 노드별 VM 헥사곤 배치도 (Polystat)"
+
+    if [ "${GRAFANA_INSTALLED:-false}" != "true" ] || [ -z "${GRAFANA_NS:-}" ]; then
+        print_warn "Grafana Operator 대시보드가 배포되지 않았습니다 — 생략합니다."
+        return
+    fi
+
+    ensure_polystat_plugin || return
+
+    cat > ./poc-vm-statusmap-operator.json << 'DASHBOARD_EOF'
+{
+  "annotations": {"list": [{"builtIn": 1, "datasource": {"type": "grafana", "uid": "-- Grafana --"}, "enable": true, "hide": true, "iconColor": "rgba(0,211,255,1)", "name": "Annotations & Alerts", "type": "dashboard"}]},
+  "description": "KubeVirt VM Status Map — 노드별 VM 헥사곤 배치도 (Grafana Operator + Polystat)",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["kubevirt", "vm", "poc", "openshift-virtualization", "grafana-operator", "statusmap"],
+  "templating": {
+    "list": [
+      {"current": {"selected": false, "text": "Thanos-Querier", "value": "Thanos-Querier"}, "hide": 0, "includeAll": false, "label": "Datasource", "multi": false, "name": "datasource", "options": [], "query": "prometheus", "refresh": 1, "type": "datasource"},
+      {"allValue": "", "current": {"selected": true, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "${datasource}"}, "definition": "label_values(kubevirt_vmi_info, node)", "hide": 0, "includeAll": true, "label": "Node", "multi": true, "name": "node", "options": [], "query": {"query": "label_values(kubevirt_vmi_info, node)", "refId": "Q"}, "refresh": 2, "regex": "", "sort": 1, "type": "query"}
+    ]
+  },
+  "time": {"from": "now-5m", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "KubeVirt VM Status Map (Operator)",
+  "uid": "poc-vm-statusmap-operator",
+  "version": 1,
+  "panels": [
+    {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}, "id": 100, "title": "VM Status Summary", "type": "row"},
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"fixedColor": "green", "mode": "fixed"}, "mappings": [], "unit": "none"}, "overrides": []},
+      "gridPos": {"h": 3, "w": 6, "x": 0, "y": 1},
+      "id": 1,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "title": "Running",
+      "type": "stat",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(kubevirt_vmi_phase_count{phase=~\"Running|running\"}) or vector(0)", "legendFormat": "", "refId": "A"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"fixedColor": "yellow", "mode": "fixed"}, "mappings": [], "unit": "none"}, "overrides": []},
+      "gridPos": {"h": 3, "w": 6, "x": 6, "y": 1},
+      "id": 2,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "title": "Paused",
+      "type": "stat",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(kubevirt_vmi_phase_count{phase=~\"Paused|paused\"}) or vector(0)", "legendFormat": "", "refId": "A"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"fixedColor": "red", "mode": "fixed"}, "mappings": [], "unit": "none"}, "overrides": []},
+      "gridPos": {"h": 3, "w": 6, "x": 12, "y": 1},
+      "id": 3,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "title": "Abnormal",
+      "type": "stat",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(kubevirt_vmi_phase_count{phase!~\"Running|running|Paused|paused\"}) or vector(0)", "legendFormat": "", "refId": "A"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"fixedColor": "blue", "mode": "fixed"}, "mappings": [], "unit": "none"}, "overrides": []},
+      "gridPos": {"h": 3, "w": 6, "x": 18, "y": 1},
+      "id": 4,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "title": "Total VMI",
+      "type": "stat",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "count(kubevirt_vmi_info) or vector(0)", "legendFormat": "", "refId": "A"}]
+    },
+    {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 4}, "id": 101, "title": "VM Status Map by Node", "type": "row"},
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "#C9190B", "value": null},
+              {"color": "#37872D", "value": 1}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 12, "w": 12, "x": 0, "y": 5},
+      "id": 10,
+      "maxPerRow": 2,
+      "options": {
+        "autoSizeColumns": true,
+        "autoSizeRows": true,
+        "autoSizePolygons": true,
+        "ellipseCharacters": 18,
+        "ellipseEnabled": true,
+        "globalAutoScaleFonts": true,
+        "globalDecimals": 0,
+        "globalDisplayMode": "all",
+        "globalDisplayTextTriggeredEmpty": "",
+        "globalFillColor": "#37872D",
+        "globalFontSize": 12,
+        "globalGradientsEnabled": false,
+        "globalOperatorName": "last",
+        "globalPolygonBorderColor": "#1a1a1a",
+        "globalPolygonBorderSize": 2,
+        "globalPolygonSize": 50,
+        "globalRegexPattern": "",
+        "globalShape": "hexagon_pointed_top",
+        "globalShowTimestampEnabled": false,
+        "globalShowTooltipColumnHeadersEnabled": true,
+        "globalShowValueEnabled": false,
+        "globalTextFontAutoColor": "#FFFFFF",
+        "globalTextFontAutoColorEnabled": true,
+        "globalTextFontColor": "#FFFFFF",
+        "globalTextFontFamily": "Roboto",
+        "globalTooltipDisplayMode": "all",
+        "globalTooltipDisplayTextTriggeredEmpty": "",
+        "globalTooltipFontFamily": "Roboto",
+        "globalTooltipFontSize": 12,
+        "layoutDisplayLimit": 100,
+        "layoutNumColumns": 0,
+        "layoutNumRows": 0,
+        "sortByDirection": 1,
+        "sortByField": "name"
+      },
+      "repeat": "node",
+      "repeatDirection": "h",
+      "title": "$node",
+      "type": "grafana-polystat-panel",
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "expr": "count by (name, namespace) (kubevirt_vmi_info{node=~\"$node\"})",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
+DASHBOARD_EOF
+
+    {
+        printf 'apiVersion: grafana.integreatly.org/v1beta1\n'
+        printf 'kind: GrafanaDashboard\n'
+        printf 'metadata:\n'
+        printf '  name: poc-vm-statusmap-operator\n'
+        printf '  namespace: %s\n' "${GRAFANA_NS}"
+        printf 'spec:\n'
+        printf '  resyncPeriod: 5m\n'
+        printf '  instanceSelector:\n'
+        printf '    matchLabels:\n'
+        printf '      dashboards: poc-grafana\n'
+        printf '  json: |\n'
+        sed 's/^/    /' ./poc-vm-statusmap-operator.json
+    } > ./poc-vm-statusmap-operator-dashboard.yaml
+
+    oc apply -f ./poc-vm-statusmap-operator-dashboard.yaml
+    print_ok "GrafanaDashboard poc-vm-statusmap-operator 배포됨"
+
+    local grafana_route
+    grafana_route=$(oc get route poc-grafana-route -n "$GRAFANA_NS" -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+    if [ -n "$grafana_route" ]; then
+        print_info "  대시보드: https://${grafana_route}/d/poc-vm-statusmap-operator"
+    fi
+}
+
 step_perses_dashboards() {
-    print_step "4/4  동일한 대시보드를 COO + Red Hat build of Perses 방식으로 배포 (선택 사항)"
+    print_step "5/5  동일한 대시보드를 COO + Red Hat build of Perses 방식으로 배포 (선택 사항)"
 
     if [ "${COO_INSTALLED:-false}" != "true" ] || ! oc get crd uiplugins.observability.openshift.io &>/dev/null; then
         print_warn "Cluster Observability Operator(또는 UIPlugin CRD)를 찾지 못했습니다 — 생략합니다."
@@ -1756,6 +2076,7 @@ print_summary() {
     if [ -n "${GRAFANA_NS:-}" ]; then
         echo -e "  Grafana Operator 대시보드도 namespace ${GRAFANA_NS}에 배포되었습니다:"
         echo -e "    ${CYAN}oc get grafanadashboard,grafanadatasource -n ${GRAFANA_NS}${NC}"
+        echo -e "    - KubeVirt VM Status Map (Operator) — 노드별 VM 헥사곤 배치도"
         echo ""
     fi
 
@@ -1780,7 +2101,7 @@ cleanup() {
 
     detect_grafana_instance
     if [ -n "${GRAFANA_NS:-}" ]; then
-        oc delete grafanadashboard poc-vm-overview-operator poc-ocpv-overview-operator -n "$GRAFANA_NS" --ignore-not-found 2>/dev/null || true
+        oc delete grafanadashboard poc-vm-overview-operator poc-ocpv-overview-operator poc-vm-statusmap-operator -n "$GRAFANA_NS" --ignore-not-found 2>/dev/null || true
         oc delete grafanadatasource thanos-querier-datasource -n "$GRAFANA_NS" --ignore-not-found 2>/dev/null || true
         oc delete serviceaccount poc-grafana-view -n "$GRAFANA_NS" --ignore-not-found 2>/dev/null || true
     fi
@@ -1804,6 +2125,7 @@ main() {
     step_dashboard_vm
     step_dashboard_ocpv
     step_operator_dashboards
+    step_statusmap_dashboard
     step_perses_dashboards
     print_summary
 }
