@@ -1535,7 +1535,7 @@ EOF
         "globalDecimals": 0,
         "globalDisplayMode": "all",
         "globalDisplayTextTriggeredEmpty": "",
-        "globalFillColor": "#37872D",
+        "globalFillColor": "#6C757D",
         "globalFontSize": 12,
         "globalGradientsEnabled": false,
         "globalOperatorName": "last",
