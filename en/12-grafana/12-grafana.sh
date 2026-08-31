@@ -1558,7 +1558,26 @@ EOF
         "layoutNumColumns": 0,
         "layoutNumRows": 0,
         "sortByDirection": 1,
-        "sortByField": "name"
+        "sortByField": "name",
+        "overrides": [
+          {
+            "label": "VM Status",
+            "metricName": "/.*/",
+            "alias": "",
+            "thresholds": [
+              {"color": "#6C757D", "state": 0, "value": 0},
+              {"color": "#37872D", "state": 1, "value": 1}
+            ],
+            "prefix": "",
+            "suffix": "",
+            "clickThrough": "",
+            "sanitizeURLEnabled": true,
+            "sanitizedURL": "",
+            "enabled": true,
+            "operatorName": "last",
+            "order": 0
+          }
+        ]
       },
       "title": "VM Status Map — Running (green) / Stopped (gray)",
       "type": "grafana-polystat-panel",
