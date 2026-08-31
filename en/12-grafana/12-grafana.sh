@@ -1202,33 +1202,6 @@ EOF
         "regex": "",
         "sort": 1,
         "type": "query"
-      },
-      {
-        "allValue": ".*",
-        "current": {
-          "selected": true,
-          "text": "All",
-          "value": "$__all"
-        },
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${datasource}"
-        },
-        "definition": "label_values(kubevirt_vmi_info, node)",
-        "hide": 0,
-        "includeAll": true,
-        "label": "Node",
-        "multi": true,
-        "name": "node",
-        "options": [],
-        "query": {
-          "query": "label_values(kubevirt_vmi_info, node)",
-          "refId": "Q"
-        },
-        "refresh": 2,
-        "regex": "",
-        "sort": 1,
-        "type": "query"
       }
     ]
   },
@@ -1518,7 +1491,7 @@ EOF
         "y": 4
       },
       "id": 105,
-      "title": "VM Status Map by Node",
+      "title": "VM Status Map",
       "type": "row"
     },
     {
@@ -1532,7 +1505,7 @@ EOF
             "mode": "absolute",
             "steps": [
               {
-                "color": "#C9190B",
+                "color": "#6C757D",
                 "value": null
               },
               {
@@ -1545,13 +1518,12 @@ EOF
         "overrides": []
       },
       "gridPos": {
-        "h": 10,
-        "w": 12,
+        "h": 12,
+        "w": 24,
         "x": 0,
         "y": 5
       },
       "id": 30,
-      "maxPerRow": 2,
       "options": {
         "autoSizeColumns": true,
         "autoSizeRows": true,
@@ -1588,9 +1560,7 @@ EOF
         "sortByDirection": 1,
         "sortByField": "name"
       },
-      "repeat": "node",
-      "repeatDirection": "h",
-      "title": "$node",
+      "title": "VM Status Map — Running (green) / Stopped (gray)",
       "type": "grafana-polystat-panel",
       "targets": [
         {
@@ -1598,89 +1568,10 @@ EOF
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "count by (name, namespace) (kubevirt_vmi_info{node=~\"$node\"}) * 0 + 1",
+          "expr": "count by (name, namespace) (kubevirt_vmi_info) * 0 + 1",
           "legendFormat": "{{name}}",
           "refId": "A"
-        }
-      ]
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 15
-      },
-      "id": 106,
-      "title": "Stopped VMs",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "#6C757D",
-                "value": null
-              }
-            ]
-          }
         },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 16
-      },
-      "id": 31,
-      "options": {
-        "autoSizeColumns": true,
-        "autoSizeRows": true,
-        "autoSizePolygons": true,
-        "ellipseCharacters": 18,
-        "ellipseEnabled": true,
-        "globalAutoScaleFonts": true,
-        "globalDecimals": 0,
-        "globalDisplayMode": "all",
-        "globalDisplayTextTriggeredEmpty": "",
-        "globalFillColor": "#6C757D",
-        "globalFontSize": 12,
-        "globalGradientsEnabled": false,
-        "globalOperatorName": "last",
-        "globalPolygonBorderColor": "#1a1a1a",
-        "globalPolygonBorderSize": 2,
-        "globalPolygonSize": 50,
-        "globalRegexPattern": "",
-        "globalShape": "hexagon_pointed_top",
-        "globalShowTimestampEnabled": false,
-        "globalShowTooltipColumnHeadersEnabled": true,
-        "globalShowValueEnabled": false,
-        "globalTextFontAutoColor": "#FFFFFF",
-        "globalTextFontAutoColorEnabled": true,
-        "globalTextFontColor": "#FFFFFF",
-        "globalTextFontFamily": "Roboto",
-        "globalTooltipDisplayMode": "all",
-        "globalTooltipDisplayTextTriggeredEmpty": "",
-        "globalTooltipFontFamily": "Roboto",
-        "globalTooltipFontSize": 12,
-        "layoutDisplayLimit": 100,
-        "layoutNumColumns": 0,
-        "layoutNumRows": 0,
-        "sortByDirection": 1,
-        "sortByField": "name"
-      },
-      "title": "Stopped VMs",
-      "type": "grafana-polystat-panel",
-      "targets": [
         {
           "datasource": {
             "type": "prometheus",
@@ -1688,7 +1579,7 @@ EOF
           },
           "expr": "count by (name, namespace) (kubevirt_vm_info unless on(name, namespace) kubevirt_vmi_info) * 0",
           "legendFormat": "{{name}}",
-          "refId": "A"
+          "refId": "B"
         }
       ]
     },
@@ -1698,7 +1589,7 @@ EOF
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 24
+        "y": 17
       },
       "id": 101,
       "title": "CPU",
@@ -1731,7 +1622,7 @@ EOF
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 25
+        "y": 18
       },
       "id": 5,
       "options": {
@@ -1770,7 +1661,7 @@ EOF
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 33
+        "y": 26
       },
       "id": 102,
       "title": "Memory",
@@ -1803,7 +1694,7 @@ EOF
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 34
+        "y": 27
       },
       "id": 6,
       "options": {
@@ -1865,7 +1756,7 @@ EOF
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 34
+        "y": 27
       },
       "id": 7,
       "options": {
@@ -1904,7 +1795,7 @@ EOF
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 42
+        "y": 35
       },
       "id": 103,
       "title": "Network I/O",
@@ -1937,7 +1828,7 @@ EOF
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 43
+        "y": 36
       },
       "id": 8,
       "options": {
@@ -1997,7 +1888,7 @@ EOF
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 43
+        "y": 36
       },
       "id": 9,
       "options": {
@@ -2036,7 +1927,7 @@ EOF
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 51
+        "y": 44
       },
       "id": 104,
       "title": "Storage I/O",
@@ -2069,7 +1960,7 @@ EOF
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 52
+        "y": 45
       },
       "id": 10,
       "options": {
@@ -2129,7 +2020,7 @@ EOF
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 52
+        "y": 45
       },
       "id": 11,
       "options": {
