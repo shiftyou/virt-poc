@@ -1203,6 +1203,37 @@ EOF
         "regex": "",
         "sort": 1,
         "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values(kubevirt_vmi_info, node)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Node",
+        "multi": true,
+        "name": "node",
+        "options": [],
+        "query": {
+          "query": "label_values(kubevirt_vmi_info, node)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 2,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
       }
     ]
   },
@@ -1492,7 +1523,9 @@ EOF
         "y": 4
       },
       "id": 105,
-      "title": "VM Status Map",
+      "repeat": "node",
+      "repeatDirection": "h",
+      "title": "Node: $node — Running VMs",
       "type": "row"
     },
     {
@@ -1505,8 +1538,8 @@ EOF
         "overrides": []
       },
       "gridPos": {
-        "h": 10,
-        "w": 12,
+        "h": 8,
+        "w": 24,
         "x": 0,
         "y": 5
       },
@@ -1547,7 +1580,7 @@ EOF
         "sortByField": "name",
         "globalFillColor": "#37872D"
       },
-      "title": "Running VMs",
+      "title": "Running VMs ($node)",
       "type": "grafana-polystat-panel",
       "targets": [
         {
@@ -1555,11 +1588,23 @@ EOF
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "count by (name, namespace) (kubevirt_vmi_info) * 0 + 1",
+          "expr": "count by (name, namespace) (kubevirt_vmi_info{node=~\"$node\"}) * 0 + 1",
           "legendFormat": "{{name}}",
           "refId": "A"
         }
       ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "id": 106,
+      "title": "Stopped VMs",
+      "type": "row"
     },
     {
       "datasource": {
@@ -1571,10 +1616,10 @@ EOF
         "overrides": []
       },
       "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 12,
-        "y": 5
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 14
       },
       "id": 31,
       "options": {
@@ -1633,7 +1678,7 @@ EOF
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 22
       },
       "id": 101,
       "title": "CPU",
@@ -1666,7 +1711,7 @@ EOF
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 23
       },
       "id": 5,
       "options": {
@@ -1705,7 +1750,7 @@ EOF
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 24
+        "y": 31
       },
       "id": 102,
       "title": "Memory",
@@ -1738,7 +1783,7 @@ EOF
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 25
+        "y": 32
       },
       "id": 6,
       "options": {
@@ -1800,7 +1845,7 @@ EOF
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 25
+        "y": 32
       },
       "id": 7,
       "options": {
@@ -1839,7 +1884,7 @@ EOF
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 33
+        "y": 40
       },
       "id": 103,
       "title": "Network I/O",
@@ -1872,7 +1917,7 @@ EOF
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 34
+        "y": 41
       },
       "id": 8,
       "options": {
@@ -1932,7 +1977,7 @@ EOF
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 34
+        "y": 41
       },
       "id": 9,
       "options": {
@@ -1971,7 +2016,7 @@ EOF
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 42
+        "y": 49
       },
       "id": 104,
       "title": "Storage I/O",
@@ -2004,7 +2049,7 @@ EOF
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 43
+        "y": 50
       },
       "id": 10,
       "options": {
@@ -2064,7 +2109,7 @@ EOF
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 43
+        "y": 50
       },
       "id": 11,
       "options": {
