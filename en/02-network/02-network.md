@@ -3,7 +3,109 @@
 Configure NNCP (NodeNetworkConfigurationPolicy) and NAD (NetworkAttachmentDefinition)
 to connect VMs to the physical network in OpenShift Virtualization.
 
-When running `02-network.sh`, select one of 4 modes.
+When running `02-network.sh`, first pick the NAD mode (VLAN or not). **When creating a new NNCP**, choose the interface type.
+
+| Step | Options |
+|------|---------|
+| NAD | 1) Default (no VLAN) · 2) VLAN filtering |
+| Create NNCP | 1) Linux Bridge · 2) OVS Bridge (OVN Localnet) · 3) Bond + Linux Bridge · 4) VLAN + Linux Bridge |
+
+Choosing OVS Bridge makes the NAD `ovn-k8s-cni-overlay` (localnet). The other types use a `cnv-bridge` NAD.
+
+---
+
+## NNCP interface types
+
+NMState NNCP can create more than a Linux Bridge. Selecting **0) Create a new NNCP** in `02-network.sh` shows this list.
+
+### 1. Linux Bridge (`type: linux-bridge`)
+
+Attach a physical NIC as a bridge port. NAD is `cnv-bridge`. If VLAN filtering is selected, the port is set to trunk.
+
+### 2. OVS Bridge (`type: ovs-bridge`)
+
+Open vSwitch bridge + `ovn.bridge-mappings`. NAD is OVN Localnet (`ovn-k8s-cni-overlay`). Use this when you need OVN port security / ACL.
+
+```yaml
+apiVersion: nmstate.io/v1
+kind: NodeNetworkConfigurationPolicy
+metadata:
+  name: ovs-br-poc-nncp
+spec:
+  nodeSelector:
+    node-role.kubernetes.io/worker: ""
+  desiredState:
+    interfaces:
+      - name: ovs-br-poc
+        type: ovs-bridge
+        state: up
+        bridge:
+          options:
+            stp: false
+          port:
+            - name: ens4
+    ovn:
+      bridge-mappings:
+        - localnet: poc-localnet
+          bridge: ovs-br-poc
+          state: present
+```
+
+> The NNCP `bridge-mappings[].localnet` value and the NAD CNI `"name"` must match.
+
+### 3. Bond + Linux Bridge (`type: bond` + `linux-bridge`)
+
+Bond two physical NICs with `active-backup` or `802.3ad` (LACP), then attach the bond as a Linux Bridge port. NAD is `cnv-bridge`. LACP requires switch configuration.
+
+```yaml
+interfaces:
+  - name: bond0
+    type: bond
+    state: up
+    ipv4:
+      enabled: false
+    link-aggregation:
+      mode: active-backup
+      port:
+        - ens4
+        - ens5
+  - name: br-poc
+    type: linux-bridge
+    state: up
+    ipv4:
+      enabled: false
+    bridge:
+      options:
+        stp:
+          enabled: false
+      port:
+        - name: bond0
+```
+
+### 4. VLAN + Linux Bridge (`type: vlan` + `linux-bridge`)
+
+Create a VLAN sub-interface (`ens4.100`) on the physical NIC and attach it as a bridge port. This is single-VLAN access, distinct from Linux Bridge trunk filtering (Method 3).
+
+```yaml
+interfaces:
+  - name: ens4.100
+    type: vlan
+    state: up
+    vlan:
+      base-iface: ens4
+      id: 100
+  - name: br-poc
+    type: linux-bridge
+    state: up
+    ipv4:
+      enabled: false
+    bridge:
+      options:
+        stp:
+          enabled: false
+      port:
+        - name: ens4.100
+```
 
 ---
 

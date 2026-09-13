@@ -3,12 +3,17 @@
 # 02-network.sh
 #
 # NNCP(NodeNetworkConfigurationPolicy) + NAD(NetworkAttachmentDefinition) configuration
-# Select one of 4 network methods to set up a secondary network for VMs.
+# NAD mode (VLAN or not) and NNCP interface type are selected separately.
 #
-#   1. Linux Bridge          — cnv-bridge CNI, NMState NNCP
-#   2. OVN Localnet          — ovn-k8s-cni-overlay, OVN bridge-mappings
-#   3. Linux Bridge + VLAN   — cnv-bridge CNI + VLAN ID, trunk port
-#   4. OVN Localnet + VLAN   — ovn-k8s-cni-overlay + vlanID
+# NAD:
+#   1. Default            — no VLAN
+#   2. VLAN filtering     — VLAN ID on the NAD
+#
+# NNCP (when creating a new one):
+#   1. Linux Bridge        — type: linux-bridge
+#   2. OVS Bridge          — type: ovs-bridge + OVN localnet
+#   3. Bond + Linux Bridge — type: bond + linux-bridge
+#   4. VLAN + Linux Bridge — type: vlan + linux-bridge
 #
 # Usage: ./02-network.sh
 # =============================================================================
@@ -32,6 +37,11 @@ SECONDARY_IP_PREFIX="${SECONDARY_IP_PREFIX:-192.168.100}"
 # Variables set per mode
 NET_TYPE=""
 NAD_NAME=""
+NNCP_IFACE_TYPE="${NNCP_IFACE_TYPE:-linux-bridge}"
+LOCALNET_NAME="${LOCALNET_NAME:-poc-localnet}"
+BOND_NAME="${BOND_NAME:-bond0}"
+BOND_MODE="${BOND_MODE:-active-backup}"
+BOND_INTERFACE_2="${BOND_INTERFACE_2:-}"
 
 if [ -f "${SCRIPT_DIR}/../utils/common.sh" ]; then
     source "${SCRIPT_DIR}/../utils/common.sh"
@@ -173,6 +183,8 @@ choose_mode() {
     echo -e "     ${DIM}Switch: Trunk port required + VLAN must be in the allowed list${NC}"
     echo -e "     ${DIM}Use   : Tenant/department network isolation (multiple VLANs on one NIC)${NC}"
     echo ""
+    echo -e "  ${DIM}NNCP interface type (Linux Bridge / OVS / Bond / VLAN) is chosen when creating a new NNCP.${NC}"
+    echo ""
     echo -e "  Current settings:"
     echo -e "    NNCP_NAME        : ${CYAN}${NNCP_NAME}${NC}"
     echo -e "    BRIDGE_NAME      : ${CYAN}${BRIDGE_NAME}${NC}"
@@ -286,61 +298,95 @@ _wait_nncp() {
 }
 
 # =============================================================================
-# Create new NNCP
+# Detect NNCP type / NAD name
 # =============================================================================
-_create_nncp() {
-    local net_type="$1"
+_detect_nncp_type() {
+    local name="$1"
+    local types
+    types=$(oc get nncp "$name" \
+        -o jsonpath='{range .spec.desiredState.interfaces[*]}{.type}{"\n"}{end}' \
+        2>/dev/null || true)
 
-    echo ""
-    print_step "Create new NNCP"
+    if echo "$types" | grep -qx "ovs-bridge"; then
+        NNCP_IFACE_TYPE="ovs-bridge"
+        BRIDGE_NAME=$(oc get nncp "$name" \
+            -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="ovs-bridge")]}{.name}{end}' \
+            2>/dev/null || true)
+        BRIDGE_INTERFACE=$(oc get nncp "$name" \
+            -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="ovs-bridge")]}{.bridge.port[0].name}{end}' \
+            2>/dev/null || true)
+        local _ln
+        _ln=$(oc get nncp "$name" \
+            -o jsonpath='{.spec.desiredState.ovn.bridge-mappings[0].localnet}' \
+            2>/dev/null || true)
+        [ -n "$_ln" ] && LOCALNET_NAME="$_ln"
+    elif echo "$types" | grep -qx "linux-bridge"; then
+        BRIDGE_NAME=$(oc get nncp "$name" \
+            -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="linux-bridge")]}{.name}{end}' \
+            2>/dev/null || true)
+        BRIDGE_INTERFACE=$(oc get nncp "$name" \
+            -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="linux-bridge")]}{.bridge.port[0].name}{end}' \
+            2>/dev/null || true)
+        if echo "$types" | grep -qx "bond"; then
+            NNCP_IFACE_TYPE="bond"
+            BOND_NAME=$(oc get nncp "$name" \
+                -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="bond")]}{.name}{end}' \
+                2>/dev/null || true)
+        elif echo "$types" | grep -qx "vlan"; then
+            NNCP_IFACE_TYPE="vlan"
+        else
+            NNCP_IFACE_TYPE="linux-bridge"
+        fi
+    else
+        NNCP_IFACE_TYPE="linux-bridge"
+        BRIDGE_NAME=$(oc get nncp "$name" \
+            -o jsonpath='{.spec.desiredState.interfaces[0].name}' 2>/dev/null || true)
+    fi
+}
 
-    # Get NNCP name
-    read -r -p "  Enter NNCP name [${NNCP_NAME}]: " _input
-    [ -n "$_input" ] && NNCP_NAME="$_input"
+_nncp_type_label() {
+    case "${1:-linux-bridge}" in
+        ovs-bridge) echo "ovs-bridge" ;;
+        bond)       echo "bond+bridge" ;;
+        vlan)       echo "vlan+bridge" ;;
+        *)          echo "linux-bridge" ;;
+    esac
+}
 
-    # Get bridge name
-    read -r -p "  Enter Bridge name [${BRIDGE_NAME}]: " _input
-    [ -n "$_input" ] && BRIDGE_NAME="$_input"
+_set_nad_name() {
+    if [ "$NNCP_IFACE_TYPE" = "ovs-bridge" ]; then
+        if [ "$NET_TYPE" = "2" ]; then
+            NAD_NAME="poc-localnet-vlan-nad"
+        else
+            NAD_NAME="poc-localnet-nad"
+        fi
+    else
+        if [ "$NET_TYPE" = "2" ]; then
+            NAD_NAME="poc-bridge-vlan-nad"
+        else
+            NAD_NAME="poc-bridge-nad"
+        fi
+    fi
+}
 
-    # Get bridge interface
-    read -r -p "  Enter Bridge interface (physical NIC) [${BRIDGE_INTERFACE}]: " _input
-    [ -n "$_input" ] && BRIDGE_INTERFACE="$_input"
+_list_worker_nics() {
+    local node
+    node=$(oc get nodes -l node-role.kubernetes.io/worker \
+        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+    [ -z "$node" ] && return 0
+    print_info "Ethernet interfaces on worker node ${node}:"
+    oc get nns "$node" \
+        -o jsonpath='{range .status.currentState.interfaces[?(@.type=="ethernet")]}    {.name}{"  state="}{.state}{"\n"}{end}' \
+        2>/dev/null || true
+}
 
-    # Get MTU (optional)
-    local mtu=""
-    read -r -p "  Set MTU? (leave blank for default): " mtu
-
-    # Generate NNCP YAML
+_emit_linux_bridge_port() {
+    local port_name="$1"
+    local net_type="$2"
     if [ "$net_type" = "2" ]; then
-        # Linux Bridge + VLAN
-        {
-            cat <<EOF
-apiVersion: nmstate.io/v1
-kind: NodeNetworkConfigurationPolicy
-metadata:
-  name: ${NNCP_NAME}
-spec:
-  nodeSelector:
-    node-role.kubernetes.io/worker: ''
-  desiredState:
-    interfaces:
-      - name: ${BRIDGE_NAME}
-        description: Linux bridge (VLAN trunk) with ${BRIDGE_INTERFACE} as a port
-        type: linux-bridge
-        state: up
-EOF
-            [ -n "${mtu}" ] && echo "        mtu: ${mtu}"
-            cat <<EOF
-        ipv4:
-          enabled: false
-        ipv6:
-          enabled: false
-        bridge:
-          options:
-            stp:
-              enabled: false
+        cat <<EOF
           port:
-            - name: ${BRIDGE_INTERFACE}
+            - name: ${port_name}
               vlan:
                 mode: trunk
                 trunk-tags:
@@ -348,11 +394,146 @@ EOF
                       min: 1
                       max: 4094
 EOF
-        } > nncp-${NNCP_NAME}.yaml
     else
-        # Linux Bridge (no VLAN)
-        {
-            cat <<EOF
+        cat <<EOF
+          port:
+            - name: ${port_name}
+EOF
+    fi
+}
+
+_apply_nncp_yaml() {
+    echo ""
+    print_info "NNCP YAML to apply:"
+    echo "────────────────────────────────────────"
+    cat "nncp-${NNCP_NAME}.yaml"
+    echo "────────────────────────────────────────"
+    echo ""
+    read -r -p "Apply this NNCP to the cluster? [y/N]: " confirm
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        print_warn "NNCP creation cancelled."
+        exit 1
+    fi
+
+    oc apply -f "nncp-${NNCP_NAME}.yaml"
+    _wait_nncp "$NNCP_NAME" || {
+        print_error "NNCP creation failed or timed out."
+        exit 1
+    }
+    save_to_env "NNCP_NAME" "$NNCP_NAME"
+    save_to_env "BRIDGE_NAME" "$BRIDGE_NAME"
+    save_to_env "BRIDGE_INTERFACE" "$BRIDGE_INTERFACE"
+    save_to_env "NNCP_IFACE_TYPE" "$NNCP_IFACE_TYPE"
+    [ -n "${LOCALNET_NAME:-}" ] && save_to_env "LOCALNET_NAME" "$LOCALNET_NAME"
+    [ -n "${BOND_NAME:-}" ] && save_to_env "BOND_NAME" "$BOND_NAME"
+    [ -n "${BOND_MODE:-}" ] && save_to_env "BOND_MODE" "$BOND_MODE"
+    [ -n "${BOND_INTERFACE_2:-}" ] && save_to_env "BOND_INTERFACE_2" "$BOND_INTERFACE_2"
+    [ -n "${VLAN_ID:-}" ] && save_to_env "VLAN_ID" "$VLAN_ID"
+    print_ok "NNCP '${NNCP_NAME}' created (type: $(_nncp_type_label "$NNCP_IFACE_TYPE"), bridge: ${BRIDGE_NAME})"
+}
+
+# =============================================================================
+# Create new NNCP
+# =============================================================================
+_create_nncp() {
+    local net_type="$1"
+    local mtu=""
+
+    echo ""
+    print_step "Create new NNCP"
+
+    echo ""
+    echo -e "  ${GREEN}1)${NC} Linux Bridge"
+    echo -e "     type: linux-bridge — attach a physical NIC as a bridge port"
+    echo -e "     ${DIM}NAD: cnv-bridge / simplest for test and development${NC}"
+    echo ""
+    echo -e "  ${GREEN}2)${NC} OVS Bridge (OVN Localnet)"
+    echo -e "     type: ovs-bridge + ovn.bridge-mappings"
+    echo -e "     ${DIM}NAD: ovn-k8s-cni-overlay / OVN port security and ACL${NC}"
+    echo ""
+    echo -e "  ${GREEN}3)${NC} Bond + Linux Bridge"
+    echo -e "     type: bond + linux-bridge — bond two NICs, then attach to a bridge"
+    echo -e "     ${DIM}NAD: cnv-bridge / NIC HA (active-backup or LACP)${NC}"
+    echo ""
+    echo -e "  ${GREEN}4)${NC} VLAN + Linux Bridge"
+    echo -e "     type: vlan + linux-bridge — VLAN sub-interface as a bridge port"
+    echo -e "     ${DIM}NAD: cnv-bridge / single VLAN access (tagged or access)${NC}"
+    echo ""
+    read -r -p "  Select NNCP type [1-4]: " _iface_sel
+    case "$_iface_sel" in
+        1) NNCP_IFACE_TYPE="linux-bridge" ;;
+        2) NNCP_IFACE_TYPE="ovs-bridge" ;;
+        3) NNCP_IFACE_TYPE="bond" ;;
+        4) NNCP_IFACE_TYPE="vlan" ;;
+        *)
+            print_error "Please enter 1–4."
+            exit 1
+            ;;
+    esac
+
+    echo ""
+    _list_worker_nics
+    echo ""
+
+    case "$NNCP_IFACE_TYPE" in
+        ovs-bridge)
+            [ "$BRIDGE_NAME" = "br1" ] || [ "$BRIDGE_NAME" = "br-poc" ] && BRIDGE_NAME="ovs-br-poc"
+            NNCP_NAME="${BRIDGE_NAME}-nncp"
+            ;;
+        bond)
+            NNCP_NAME="${NNCP_NAME:-${BRIDGE_NAME}-bond-nncp}"
+            ;;
+        vlan)
+            NNCP_NAME="${NNCP_NAME:-${BRIDGE_NAME}-vlan-nncp}"
+            ;;
+    esac
+
+    read -r -p "  Enter NNCP name [${NNCP_NAME}]: " _input
+    [ -n "$_input" ] && NNCP_NAME="$_input"
+
+    read -r -p "  Enter Bridge name [${BRIDGE_NAME}]: " _input
+    [ -n "$_input" ] && BRIDGE_NAME="$_input"
+
+    read -r -p "  Enter physical NIC [${BRIDGE_INTERFACE}]: " _input
+    [ -n "$_input" ] && BRIDGE_INTERFACE="$_input"
+
+    if [ "$NNCP_IFACE_TYPE" = "bond" ]; then
+        local _def_nic2="${BOND_INTERFACE_2:-ens5}"
+        read -r -p "  Enter second Bond NIC [${_def_nic2}]: " _input
+        BOND_INTERFACE_2="${_input:-$_def_nic2}"
+        read -r -p "  Enter Bond name [${BOND_NAME}]: " _input
+        [ -n "$_input" ] && BOND_NAME="$_input"
+        echo ""
+        echo -e "  Bond mode:"
+        echo -e "    ${GREEN}1)${NC} active-backup  ${DIM}no extra switch config${NC}"
+        echo -e "    ${GREEN}2)${NC} 802.3ad (LACP)  ${DIM}switch LACP required${NC}"
+        read -r -p "  Select [1-2, default: 1]: " _bond_sel
+        case "${_bond_sel:-1}" in
+            2) BOND_MODE="802.3ad" ;;
+            *) BOND_MODE="active-backup" ;;
+        esac
+    fi
+
+    if [ "$NNCP_IFACE_TYPE" = "ovs-bridge" ]; then
+        read -r -p "  Enter OVN localnet name [${LOCALNET_NAME}]: " _input
+        [ -n "$_input" ] && LOCALNET_NAME="$_input"
+    fi
+
+    if [ "$NNCP_IFACE_TYPE" = "vlan" ]; then
+        read -r -p "  Enter VLAN ID [${VLAN_ID}]: " _input
+        [ -n "$_input" ] && VLAN_ID="$_input"
+        if [ -z "$VLAN_ID" ]; then
+            print_error "VLAN + Linux Bridge requires a VLAN ID."
+            exit 1
+        fi
+    fi
+
+    read -r -p "  Set MTU? (leave blank for default): " mtu
+
+    case "$NNCP_IFACE_TYPE" in
+        linux-bridge)
+            {
+                cat <<EOF
 apiVersion: nmstate.io/v1
 kind: NodeNetworkConfigurationPolicy
 metadata:
@@ -367,8 +548,127 @@ spec:
         type: linux-bridge
         state: up
 EOF
-            [ -n "${mtu}" ] && echo "        mtu: ${mtu}"
-            cat <<EOF
+                [ -n "${mtu}" ] && echo "        mtu: ${mtu}"
+                cat <<EOF
+        ipv4:
+          enabled: false
+        ipv6:
+          enabled: false
+        bridge:
+          options:
+            stp:
+              enabled: false
+EOF
+                _emit_linux_bridge_port "$BRIDGE_INTERFACE" "$net_type"
+            } > "nncp-${NNCP_NAME}.yaml"
+            ;;
+        ovs-bridge)
+            {
+                cat <<EOF
+apiVersion: nmstate.io/v1
+kind: NodeNetworkConfigurationPolicy
+metadata:
+  name: ${NNCP_NAME}
+spec:
+  nodeSelector:
+    node-role.kubernetes.io/worker: ''
+  desiredState:
+    interfaces:
+      - name: ${BRIDGE_NAME}
+        description: OVS bridge with ${BRIDGE_INTERFACE} as a port
+        type: ovs-bridge
+        state: up
+EOF
+                [ -n "${mtu}" ] && echo "        mtu: ${mtu}"
+                cat <<EOF
+        bridge:
+          options:
+            stp: false
+          port:
+            - name: ${BRIDGE_INTERFACE}
+    ovn:
+      bridge-mappings:
+        - localnet: ${LOCALNET_NAME}
+          bridge: ${BRIDGE_NAME}
+          state: present
+EOF
+            } > "nncp-${NNCP_NAME}.yaml"
+            ;;
+        bond)
+            {
+                cat <<EOF
+apiVersion: nmstate.io/v1
+kind: NodeNetworkConfigurationPolicy
+metadata:
+  name: ${NNCP_NAME}
+spec:
+  nodeSelector:
+    node-role.kubernetes.io/worker: ''
+  desiredState:
+    interfaces:
+      - name: ${BOND_NAME}
+        description: Bond (${BOND_MODE}) of ${BRIDGE_INTERFACE} + ${BOND_INTERFACE_2}
+        type: bond
+        state: up
+        ipv4:
+          enabled: false
+        ipv6:
+          enabled: false
+        link-aggregation:
+          mode: ${BOND_MODE}
+          port:
+            - ${BRIDGE_INTERFACE}
+            - ${BOND_INTERFACE_2}
+      - name: ${BRIDGE_NAME}
+        description: Linux bridge with ${BOND_NAME} as a port
+        type: linux-bridge
+        state: up
+EOF
+                [ -n "${mtu}" ] && echo "        mtu: ${mtu}"
+                cat <<EOF
+        ipv4:
+          enabled: false
+        ipv6:
+          enabled: false
+        bridge:
+          options:
+            stp:
+              enabled: false
+EOF
+                _emit_linux_bridge_port "$BOND_NAME" "$net_type"
+            } > "nncp-${NNCP_NAME}.yaml"
+            ;;
+        vlan)
+            vlan_iface="${BRIDGE_INTERFACE}.${VLAN_ID}"
+            {
+                cat <<EOF
+apiVersion: nmstate.io/v1
+kind: NodeNetworkConfigurationPolicy
+metadata:
+  name: ${NNCP_NAME}
+spec:
+  nodeSelector:
+    node-role.kubernetes.io/worker: ''
+  desiredState:
+    interfaces:
+      - name: ${vlan_iface}
+        description: VLAN ${VLAN_ID} on ${BRIDGE_INTERFACE}
+        type: vlan
+        state: up
+        vlan:
+          base-iface: ${BRIDGE_INTERFACE}
+          id: ${VLAN_ID}
+        ipv4:
+          enabled: false
+        ipv6:
+          enabled: false
+      - name: ${BRIDGE_NAME}
+        description: Linux bridge with ${vlan_iface} as a port
+        type: linux-bridge
+        state: up
+EOF
+                [ -n "${mtu}" ] && echo "        mtu: ${mtu}"
+                cat <<EOF
         ipv4:
           enabled: false
         ipv6:
@@ -378,29 +678,13 @@ EOF
             stp:
               enabled: false
           port:
-            - name: ${BRIDGE_INTERFACE}
+            - name: ${vlan_iface}
 EOF
-        } > nncp-${NNCP_NAME}.yaml
-    fi
+            } > "nncp-${NNCP_NAME}.yaml"
+            ;;
+    esac
 
-    echo ""
-    print_info "NNCP YAML to apply:"
-    echo "────────────────────────────────────────"
-    cat nncp-${NNCP_NAME}.yaml
-    echo "────────────────────────────────────────"
-    echo ""
-    read -r -p "Apply this NNCP to the cluster? [y/N]: " confirm
-    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-        print_warn "NNCP creation cancelled."
-        exit 1
-    fi
-
-    oc apply -f nncp-${NNCP_NAME}.yaml
-    _wait_nncp "$NNCP_NAME" || {
-        print_error "NNCP creation failed or timed out."
-        exit 1
-    }
-    print_ok "NNCP '${NNCP_NAME}' created successfully (bridge: ${BRIDGE_NAME})"
+    _apply_nncp_yaml
 }
 
 # =============================================================================
@@ -409,11 +693,10 @@ EOF
 step_nncp() {
     print_step "1/4  NNCP Configuration"
 
-    # Get existing NNCPs
-    local nncp_list
-    nncp_list=$(oc get nncp -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.conditions[?(@.type=="Available")].status}{"\t"}{.spec.desiredState.interfaces[0].name}{"\n"}{end}' 2>/dev/null || true)
+    local nncp_names_raw
+    nncp_names_raw=$(oc get nncp -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)
 
-    if [ -z "$nncp_list" ]; then
+    if [ -z "$nncp_names_raw" ]; then
         print_warn "No NNCP found in cluster."
         echo ""
         read -r -p "  Create a new NNCP now? [Y/n]: " confirm
@@ -426,23 +709,51 @@ step_nncp() {
     else
         echo ""
         print_info "Existing NNCPs in cluster:"
-        echo "────────────────────────────────────────────────────────────────────"
-        printf "  %-4s %-30s %-12s %s\n" "No." "NNCP Name" "Available" "Bridge Name"
-        echo "────────────────────────────────────────────────────────────────────"
+        echo "──────────────────────────────────────────────────────────────────────────────"
+        printf "  %-4s %-28s %-12s %-14s %s\n" "No." "NNCP Name" "Available" "Type" "Bridge"
+        echo "──────────────────────────────────────────────────────────────────────────────"
 
         local idx=1
-        local -a nncp_names nncp_avails nncp_bridges
-        while IFS=$'\t' read -r name avail bridge; do
-            printf "  %-4s %-30s %-12s %s\n" "$idx)" "$name" "${avail:-Unknown}" "$bridge"
+        local -a nncp_names nncp_avails
+        while read -r name; do
+            [ -z "$name" ] && continue
+            local avail types_raw itype ibridge
+            avail=$(oc get nncp "$name" \
+                -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' \
+                2>/dev/null || true)
+            types_raw=$(oc get nncp "$name" \
+                -o jsonpath='{range .spec.desiredState.interfaces[*]}{.type}{"\n"}{end}' \
+                2>/dev/null || true)
+            if echo "$types_raw" | grep -qx "ovs-bridge"; then
+                itype="ovs-bridge"
+                ibridge=$(oc get nncp "$name" \
+                    -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="ovs-bridge")]}{.name}{end}' \
+                    2>/dev/null || true)
+            elif echo "$types_raw" | grep -qx "linux-bridge"; then
+                ibridge=$(oc get nncp "$name" \
+                    -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="linux-bridge")]}{.name}{end}' \
+                    2>/dev/null || true)
+                if echo "$types_raw" | grep -qx "bond"; then
+                    itype="bond+bridge"
+                elif echo "$types_raw" | grep -qx "vlan"; then
+                    itype="vlan+bridge"
+                else
+                    itype="linux-bridge"
+                fi
+            else
+                itype="other"
+                ibridge=$(oc get nncp "$name" \
+                    -o jsonpath='{.spec.desiredState.interfaces[0].name}' 2>/dev/null || true)
+            fi
+            printf "  %-4s %-28s %-12s %-14s %s\n" "$idx)" "$name" "${avail:-Unknown}" "$itype" "${ibridge:-}"
             nncp_names+=("$name")
             nncp_avails+=("$avail")
-            nncp_bridges+=("$bridge")
             idx=$((idx+1))
-        done <<< "$nncp_list"
+        done <<< "$nncp_names_raw"
 
-        echo "────────────────────────────────────────────────────────────────────"
+        echo "──────────────────────────────────────────────────────────────────────────────"
         echo ""
-        echo "  0) Create a new NNCP"
+        echo "  0) Create a new NNCP (Linux Bridge / OVS / Bond / VLAN)"
         echo ""
 
         local selection
@@ -453,11 +764,10 @@ step_nncp() {
         elif [ "$selection" -ge 1 ] && [ "$selection" -lt "$idx" ]; then
             local arr_idx=$((selection-1))
             NNCP_NAME="${nncp_names[$arr_idx]}"
-            BRIDGE_NAME="${nncp_bridges[$arr_idx]}"
             local avail="${nncp_avails[$arr_idx]}"
-            print_ok "Selected NNCP: ${NNCP_NAME} (bridge: ${BRIDGE_NAME}, Available: ${avail})"
+            _detect_nncp_type "$NNCP_NAME"
+            print_ok "Selected NNCP: ${NNCP_NAME} (type: $(_nncp_type_label "$NNCP_IFACE_TYPE"), bridge: ${BRIDGE_NAME}, Available: ${avail})"
 
-            # Show per-node status
             echo ""
             print_info "Per-node application status (NNCE):"
             oc get nnce 2>/dev/null | grep "${NNCP_NAME}" | \
@@ -467,6 +777,8 @@ step_nncp() {
             exit 1
         fi
     fi
+
+    _set_nad_name
 }
 
 # =============================================================================
@@ -569,11 +881,76 @@ _deploy_nad_to_poc_namespaces() {
     done
 }
 
+step_nad_ovn_localnet() {
+    print_step "2/4  NAD — OVN Localnet (${LOCALNET_NAME})"
+    _ensure_namespace
+
+    cat > nad-${NAD_NAME}.yaml <<EOF
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: ${NAD_NAME}
+  namespace: ${NAD_NAMESPACE}
+spec:
+  config: |-
+    {
+        "cniVersion": "0.3.1",
+        "name": "${LOCALNET_NAME}",
+        "type": "ovn-k8s-cni-overlay",
+        "topology": "localnet",
+        "netAttachDefName": "${NAD_NAMESPACE}/${NAD_NAME}"
+    }
+EOF
+    echo "Generated file: nad-${NAD_NAME}.yaml"
+    oc apply -f nad-${NAD_NAME}.yaml
+    print_ok "NAD ${NAD_NAME} registered (localnet: ${LOCALNET_NAME})"
+}
+
+step_nad_ovn_localnet_vlan() {
+    print_step "2/4  NAD — OVN Localnet + VLAN ${VLAN_ID} (${LOCALNET_NAME})"
+    _ensure_namespace
+
+    cat > nad-${NAD_NAME}.yaml <<EOF
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: ${NAD_NAME}
+  namespace: ${NAD_NAMESPACE}
+spec:
+  config: |-
+    {
+        "cniVersion": "0.3.1",
+        "name": "${LOCALNET_NAME}",
+        "type": "ovn-k8s-cni-overlay",
+        "topology": "localnet",
+        "vlanID": ${VLAN_ID},
+        "netAttachDefName": "${NAD_NAMESPACE}/${NAD_NAME}"
+    }
+EOF
+    echo "Generated file: nad-${NAD_NAME}.yaml"
+    oc apply -f nad-${NAD_NAME}.yaml
+    print_ok "NAD ${NAD_NAME} registered (localnet: ${LOCALNET_NAME}, VLAN ${VLAN_ID})"
+}
+
 step_nad() {
-    case "$NET_TYPE" in
-        1) step_nad_linux_bridge ;;
-        2) step_nad_linux_bridge_vlan ;;
-    esac
+    if [ "$NNCP_IFACE_TYPE" = "ovs-bridge" ]; then
+        case "$NET_TYPE" in
+            2) step_nad_ovn_localnet_vlan ;;
+            *) step_nad_ovn_localnet ;;
+        esac
+    else
+        case "$NET_TYPE" in
+            1) step_nad_linux_bridge ;;
+            2)
+                # VLAN sub-interface NNCP already carries a single VLAN — do not double-tag in NAD
+                if [ "$NNCP_IFACE_TYPE" = "vlan" ]; then
+                    step_nad_linux_bridge
+                else
+                    step_nad_linux_bridge_vlan
+                fi
+                ;;
+        esac
+    fi
     _deploy_nad_to_poc_namespaces
 }
 
@@ -653,12 +1030,12 @@ step_vm() {
 step_consoleyamlsamples() {
     print_step "4/4  Register ConsoleYAMLSample"
 
-    # NNCP sample — per method
+    # NNCP sample — per interface type
     local nncp_title nncp_desc nncp_yaml
-    case "$NET_TYPE" in
-        1)
-            nncp_title="POC Linux Bridge NNCP"
-            nncp_desc="Creates a Linux Bridge (${BRIDGE_NAME}) on worker nodes."
+    case "$NNCP_IFACE_TYPE" in
+        ovs-bridge)
+            nncp_title="POC OVS Bridge NNCP"
+            nncp_desc="Creates an OVS Bridge (${BRIDGE_NAME}) mapped to OVN localnet ${LOCALNET_NAME}."
             nncp_yaml="$(cat <<YAML
     apiVersion: nmstate.io/v1
     kind: NodeNetworkConfigurationPolicy
@@ -670,6 +1047,45 @@ step_consoleyamlsamples() {
       desiredState:
         interfaces:
           - name: ${BRIDGE_NAME}
+            type: ovs-bridge
+            state: up
+            bridge:
+              options:
+                stp: false
+              port:
+                - name: ${BRIDGE_INTERFACE}
+        ovn:
+          bridge-mappings:
+            - localnet: ${LOCALNET_NAME}
+              bridge: ${BRIDGE_NAME}
+              state: present
+YAML
+)"
+            ;;
+        bond)
+            nncp_title="POC Bond + Linux Bridge NNCP"
+            nncp_desc="Creates bond ${BOND_NAME} (${BOND_MODE}) and Linux Bridge ${BRIDGE_NAME}."
+            nncp_yaml="$(cat <<YAML
+    apiVersion: nmstate.io/v1
+    kind: NodeNetworkConfigurationPolicy
+    metadata:
+      name: ${NNCP_NAME}
+    spec:
+      nodeSelector:
+        node-role.kubernetes.io/worker: ""
+      desiredState:
+        interfaces:
+          - name: ${BOND_NAME}
+            type: bond
+            state: up
+            ipv4:
+              enabled: false
+            link-aggregation:
+              mode: ${BOND_MODE}
+              port:
+                - ${BRIDGE_INTERFACE}
+                - ${BOND_INTERFACE_2:-ens5}
+          - name: ${BRIDGE_NAME}
             type: linux-bridge
             state: up
             ipv4:
@@ -679,14 +1095,48 @@ step_consoleyamlsamples() {
                 stp:
                   enabled: false
               port:
-                - name: ${BRIDGE_INTERFACE}
+                - name: ${BOND_NAME}
 YAML
 )"
             ;;
-        2)
-            nncp_title="POC Linux Bridge VLAN trunk NNCP"
-            nncp_desc="Creates a Linux Bridge (${BRIDGE_NAME}) with VLAN trunk port on worker nodes."
+        vlan)
+            nncp_title="POC VLAN + Linux Bridge NNCP"
+            nncp_desc="Creates VLAN ${VLAN_ID} on ${BRIDGE_INTERFACE} and Linux Bridge ${BRIDGE_NAME}."
             nncp_yaml="$(cat <<YAML
+    apiVersion: nmstate.io/v1
+    kind: NodeNetworkConfigurationPolicy
+    metadata:
+      name: ${NNCP_NAME}
+    spec:
+      nodeSelector:
+        node-role.kubernetes.io/worker: ""
+      desiredState:
+        interfaces:
+          - name: ${BRIDGE_INTERFACE}.${VLAN_ID}
+            type: vlan
+            state: up
+            vlan:
+              base-iface: ${BRIDGE_INTERFACE}
+              id: ${VLAN_ID}
+          - name: ${BRIDGE_NAME}
+            type: linux-bridge
+            state: up
+            ipv4:
+              enabled: false
+            bridge:
+              options:
+                stp:
+                  enabled: false
+              port:
+                - name: ${BRIDGE_INTERFACE}.${VLAN_ID}
+YAML
+)"
+            ;;
+        *)
+            if [ "$NET_TYPE" = "2" ]; then
+                nncp_title="POC Linux Bridge VLAN trunk NNCP"
+                nncp_desc="Creates a Linux Bridge (${BRIDGE_NAME}) with VLAN trunk port on worker nodes."
+                nncp_yaml="$(cat <<YAML
     apiVersion: nmstate.io/v1
     kind: NodeNetworkConfigurationPolicy
     metadata:
@@ -715,6 +1165,33 @@ YAML
                           max: 4094
 YAML
 )"
+            else
+                nncp_title="POC Linux Bridge NNCP"
+                nncp_desc="Creates a Linux Bridge (${BRIDGE_NAME}) on worker nodes."
+                nncp_yaml="$(cat <<YAML
+    apiVersion: nmstate.io/v1
+    kind: NodeNetworkConfigurationPolicy
+    metadata:
+      name: ${NNCP_NAME}
+    spec:
+      nodeSelector:
+        node-role.kubernetes.io/worker: ""
+      desiredState:
+        interfaces:
+          - name: ${BRIDGE_NAME}
+            type: linux-bridge
+            state: up
+            ipv4:
+              enabled: false
+            bridge:
+              options:
+                stp:
+                  enabled: false
+              port:
+                - name: ${BRIDGE_INTERFACE}
+YAML
+)"
+            fi
             ;;
     esac
 
@@ -737,9 +1214,32 @@ EOF
     print_ok "ConsoleYAMLSample ${NNCP_NAME} registered"
 
     # NAD sample — generate config block per method
-    local nad_config_block
-    case "$NET_TYPE" in
-        1) nad_config_block="    {
+    local nad_config_block nad_method_label
+    if [ "$NNCP_IFACE_TYPE" = "ovs-bridge" ]; then
+        if [ "$NET_TYPE" = "2" ]; then
+            nad_method_label="OVN Localnet+VLAN"
+            nad_config_block="    {
+        \"cniVersion\": \"0.3.1\",
+        \"name\": \"${LOCALNET_NAME}\",
+        \"type\": \"ovn-k8s-cni-overlay\",
+        \"topology\": \"localnet\",
+        \"vlanID\": ${VLAN_ID},
+        \"netAttachDefName\": \"${NAD_NAMESPACE}/${NAD_NAME}\"
+    }"
+        else
+            nad_method_label="OVN Localnet"
+            nad_config_block="    {
+        \"cniVersion\": \"0.3.1\",
+        \"name\": \"${LOCALNET_NAME}\",
+        \"type\": \"ovn-k8s-cni-overlay\",
+        \"topology\": \"localnet\",
+        \"netAttachDefName\": \"${NAD_NAMESPACE}/${NAD_NAME}\"
+    }"
+        fi
+    else
+        case "$NET_TYPE" in
+            1) nad_method_label="Linux Bridge"
+               nad_config_block="    {
         \"cniVersion\": \"0.3.1\",
         \"name\": \"${NAD_NAME}\",
         \"type\": \"bridge\",
@@ -748,7 +1248,8 @@ EOF
         \"macspoofchk\": true,
         \"preserveDefaultVlan\": false
     }" ;;
-        2) nad_config_block="    {
+            2) nad_method_label="Linux Bridge+VLAN"
+               nad_config_block="    {
         \"cniVersion\": \"0.3.1\",
         \"name\": \"${NAD_NAME}\",
         \"type\": \"bridge\",
@@ -758,7 +1259,8 @@ EOF
         \"macspoofchk\": true,
         \"preserveDefaultVlan\": false
     }" ;;
-    esac
+        esac
+    fi
 
     cat > consoleyamlsample-nad.yaml <<EOF
 apiVersion: console.openshift.io/v1
@@ -767,7 +1269,7 @@ metadata:
   name: ${NAD_NAME}
 spec:
   title: "POC NAD — ${NAD_NAME}"
-  description: "Register as VM secondary network after applying NNCP. (Method: $(echo "$NET_TYPE" | sed 's/1/Linux Bridge/;s/2/Linux Bridge+VLAN/'))"
+  description: "Register as VM secondary network after applying NNCP. (Method: ${nad_method_label})"
   targetResource:
     apiVersion: k8s.cni.cncf.io/v1
     kind: NetworkAttachmentDefinition
@@ -791,9 +1293,31 @@ EOF
 # =============================================================================
 print_summary() {
     local mode_label
-    case "$NET_TYPE" in
-        1) mode_label="Linux Bridge" ;;
-        2) mode_label="Linux Bridge + VLAN ${VLAN_ID}" ;;
+    case "$NNCP_IFACE_TYPE" in
+        ovs-bridge)
+            if [ "$NET_TYPE" = "2" ]; then
+                mode_label="OVS Bridge + OVN Localnet + VLAN ${VLAN_ID}"
+            else
+                mode_label="OVS Bridge + OVN Localnet"
+            fi
+            ;;
+        bond)
+            if [ "$NET_TYPE" = "2" ]; then
+                mode_label="Bond (${BOND_MODE}) + Linux Bridge + VLAN ${VLAN_ID}"
+            else
+                mode_label="Bond (${BOND_MODE}) + Linux Bridge"
+            fi
+            ;;
+        vlan)
+            mode_label="VLAN ${VLAN_ID} + Linux Bridge"
+            ;;
+        *)
+            if [ "$NET_TYPE" = "2" ]; then
+                mode_label="Linux Bridge + VLAN ${VLAN_ID}"
+            else
+                mode_label="Linux Bridge"
+            fi
+            ;;
     esac
 
     echo ""
@@ -818,7 +1342,8 @@ print_summary() {
 cleanup() {
     print_step "--cleanup: Delete 02-network resources"
     oc delete vm poc-network-vm-1 poc-network-vm-2 -n poc-network --ignore-not-found 2>/dev/null || true
-    oc delete consoleyamlsample poc-bridge-nncp poc-bridge-nad poc-bridge-vlan-nad --ignore-not-found 2>/dev/null || true
+    oc delete consoleyamlsample poc-bridge-nncp poc-bridge-nad poc-bridge-vlan-nad \
+        poc-localnet-nad poc-localnet-vlan-nad --ignore-not-found 2>/dev/null || true
     oc delete project poc-network --ignore-not-found 2>/dev/null || true
     echo ""
     for _nncp in $(oc get nncp -o name 2>/dev/null | grep poc- || true); do

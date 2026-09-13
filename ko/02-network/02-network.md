@@ -3,7 +3,109 @@
 OpenShift Virtualization에서 VM을 물리 네트워크에 연결하기 위해
 NNCP (NodeNetworkConfigurationPolicy)와 NAD (NetworkAttachmentDefinition)를 구성합니다.
 
-`02-network.sh` 실행 시 4가지 방식 중 하나를 선택합니다.
+`02-network.sh` 실행 시 먼저 NAD 방식(VLAN 여부)을 고르고, **새 NNCP를 만들 때** 인터페이스 유형을 선택합니다.
+
+| 단계 | 선택지 |
+|------|--------|
+| NAD | 1) 기본 (VLAN 없음) · 2) VLAN filtering |
+| NNCP 생성 | 1) Linux Bridge · 2) OVS Bridge (OVN Localnet) · 3) Bond + Linux Bridge · 4) VLAN + Linux Bridge |
+
+OVS Bridge를 고르면 NAD는 자동으로 `ovn-k8s-cni-overlay` (localnet)가 됩니다. 나머지 유형은 `cnv-bridge` NAD를 사용합니다.
+
+---
+
+## NNCP 인터페이스 유형
+
+NMState NNCP는 Linux Bridge 외에 아래 유형도 만들 수 있습니다. `02-network.sh`에서 **0) 새 NNCP 생성**을 고르면 이 목록이 나옵니다.
+
+### 1. Linux Bridge (`type: linux-bridge`)
+
+물리 NIC를 브릿지 포트로 연결합니다. NAD는 `cnv-bridge`. VLAN filtering을 고른 경우 포트를 trunk로 설정합니다.
+
+### 2. OVS Bridge (`type: ovs-bridge`)
+
+Open vSwitch 브릿지 + `ovn.bridge-mappings`. NAD는 OVN Localnet (`ovn-k8s-cni-overlay`). OVN port security / ACL이 필요할 때 사용합니다.
+
+```yaml
+apiVersion: nmstate.io/v1
+kind: NodeNetworkConfigurationPolicy
+metadata:
+  name: ovs-br-poc-nncp
+spec:
+  nodeSelector:
+    node-role.kubernetes.io/worker: ""
+  desiredState:
+    interfaces:
+      - name: ovs-br-poc
+        type: ovs-bridge
+        state: up
+        bridge:
+          options:
+            stp: false
+          port:
+            - name: ens4
+    ovn:
+      bridge-mappings:
+        - localnet: poc-localnet
+          bridge: ovs-br-poc
+          state: present
+```
+
+> NNCP `bridge-mappings[].localnet` 값과 NAD CNI `"name"`은 반드시 같아야 합니다.
+
+### 3. Bond + Linux Bridge (`type: bond` + `linux-bridge`)
+
+물리 NIC 2개를 `active-backup` 또는 `802.3ad`(LACP)로 본딩한 뒤, 그 bond를 Linux Bridge 포트로 연결합니다. NAD는 `cnv-bridge`. LACP는 스위치 설정이 필요합니다.
+
+```yaml
+interfaces:
+  - name: bond0
+    type: bond
+    state: up
+    ipv4:
+      enabled: false
+    link-aggregation:
+      mode: active-backup
+      port:
+        - ens4
+        - ens5
+  - name: br-poc
+    type: linux-bridge
+    state: up
+    ipv4:
+      enabled: false
+    bridge:
+      options:
+        stp:
+          enabled: false
+      port:
+        - name: bond0
+```
+
+### 4. VLAN + Linux Bridge (`type: vlan` + `linux-bridge`)
+
+물리 NIC 위에 VLAN 서브인터페이스(`ens4.100`)를 만들고 그걸 브릿지 포트로 연결합니다. 단일 VLAN access용입니다. Linux Bridge trunk 필터링(방식 3)과는 다릅니다.
+
+```yaml
+interfaces:
+  - name: ens4.100
+    type: vlan
+    state: up
+    vlan:
+      base-iface: ens4
+      id: 100
+  - name: br-poc
+    type: linux-bridge
+    state: up
+    ipv4:
+      enabled: false
+    bridge:
+      options:
+        stp:
+          enabled: false
+      port:
+        - name: ens4.100
+```
 
 ---
 
