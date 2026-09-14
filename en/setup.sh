@@ -397,10 +397,10 @@ print_info "  NNCP_IFACE_TYPE   : ${NNCP_IFACE_TYPE}"
 echo ""
 print_info "SECONDARY_IP_PREFIX: The network prefix used for static IP assignment to secondary NIC (eth1) via cloud-init."
 print_info "SECONDARY_IP_START / END: IP range (last octet). IPs are assigned sequentially per lab."
-print_info "  e.g.) prefix=192.168.200, range=60~70 → 02-network: .60,.61 / 03-vm: .62,.63 / 05-netpol: .64,.65"
+print_info "  e.g.) prefix=192.168.200, range=1~254 → 02-network: .1,.2 / 03-vm: .3,.4 / 05-netpol: .5,.6"
 ask "Secondary NIC IP prefix (first 3 octets)" "192.168.200" SECONDARY_IP_PREFIX
-ask "Secondary NIC IP range start (last octet)" "60" SECONDARY_IP_START
-ask "Secondary NIC IP range end   (last octet)" "70" SECONDARY_IP_END
+ask "Secondary NIC IP range start (last octet)" "1" SECONDARY_IP_START
+ask "Secondary NIC IP range end   (last octet)" "254" SECONDARY_IP_END
 if (( SECONDARY_IP_END - SECONDARY_IP_START < 5 )); then
     print_warn "IP range too small (need at least 6 IPs). Adjusting end to $(( SECONDARY_IP_START + 10 ))."
     SECONDARY_IP_END=$(( SECONDARY_IP_START + 10 ))

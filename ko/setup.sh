@@ -397,10 +397,10 @@ print_info "  NNCP_IFACE_TYPE   : ${NNCP_IFACE_TYPE}"
 echo ""
 print_info "SECONDARY_IP_PREFIX: cloud-init을 통해 Secondary NIC (eth1)에 정적 IP를 할당할 때 사용하는 네트워크 프리픽스입니다."
 print_info "SECONDARY_IP_START / END: IP 범위 (마지막 옥텟). Lab별로 순차 할당됩니다."
-print_info "  예) prefix=192.168.200, range=60~70 → 02-network: .60,.61 / 03-vm: .62,.63 / 05-netpol: .64,.65"
+print_info "  예) prefix=192.168.200, range=1~254 → 02-network: .1,.2 / 03-vm: .3,.4 / 05-netpol: .5,.6"
 ask "Secondary NIC IP 프리픽스 (처음 3 옥텟)" "192.168.200" SECONDARY_IP_PREFIX
-ask "Secondary NIC IP 범위 시작 (마지막 옥텟)" "60" SECONDARY_IP_START
-ask "Secondary NIC IP 범위 끝   (마지막 옥텟)" "70" SECONDARY_IP_END
+ask "Secondary NIC IP 범위 시작 (마지막 옥텟)" "1" SECONDARY_IP_START
+ask "Secondary NIC IP 범위 끝   (마지막 옥텟)" "254" SECONDARY_IP_END
 if (( SECONDARY_IP_END - SECONDARY_IP_START < 5 )); then
     print_warn "IP 범위가 너무 작습니다 (최소 6개 필요). 끝 값을 $(( SECONDARY_IP_START + 10 ))으로 조정합니다."
     SECONDARY_IP_END=$(( SECONDARY_IP_START + 10 ))
