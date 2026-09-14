@@ -396,10 +396,16 @@ print_info "  NNCP_IFACE_TYPE   : ${NNCP_IFACE_TYPE}"
 
 echo ""
 print_info "SECONDARY_IP_PREFIX: The network prefix used for static IP assignment to secondary NIC (eth1) via cloud-init."
-print_info "SECONDARY_IP_START: Starting last octet. IPs are assigned sequentially per lab."
-print_info "  e.g.) prefix=192.168.200, start=60 → 02-network: .60,.61 / 03-vm: .62,.63 / 05-netpol: .64,.65"
+print_info "SECONDARY_IP_START / END: IP range (last octet). IPs are assigned sequentially per lab."
+print_info "  e.g.) prefix=192.168.200, range=60~70 → 02-network: .60,.61 / 03-vm: .62,.63 / 05-netpol: .64,.65"
 ask "Secondary NIC IP prefix (first 3 octets)" "192.168.200" SECONDARY_IP_PREFIX
-ask "Secondary NIC IP start (last octet)" "60" SECONDARY_IP_START
+ask "Secondary NIC IP range start (last octet)" "60" SECONDARY_IP_START
+ask "Secondary NIC IP range end   (last octet)" "70" SECONDARY_IP_END
+if (( SECONDARY_IP_END - SECONDARY_IP_START < 5 )); then
+    print_warn "IP range too small (need at least 6 IPs). Adjusting end to $(( SECONDARY_IP_START + 10 ))."
+    SECONDARY_IP_END=$(( SECONDARY_IP_START + 10 ))
+fi
+print_info "  IP range: ${SECONDARY_IP_PREFIX}.${SECONDARY_IP_START} ~ ${SECONDARY_IP_PREFIX}.${SECONDARY_IP_END}"
 
 # =============================================================================
 # Save env.conf
@@ -428,6 +434,7 @@ BOND_MODE=${BOND_MODE}
 BOND_INTERFACE_2=${BOND_INTERFACE_2}
 SECONDARY_IP_PREFIX=${SECONDARY_IP_PREFIX}
 SECONDARY_IP_START=${SECONDARY_IP_START}
+SECONDARY_IP_END=${SECONDARY_IP_END}
 
 # StorageClass
 STORAGE_CLASS=${STORAGE_CLASS}
