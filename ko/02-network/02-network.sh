@@ -299,47 +299,7 @@ _wait_nncp() {
 # NNCP 유형 감지 / NAD 이름
 # =============================================================================
 _detect_nncp_type() {
-    local name="$1"
-    local types
-    types=$(oc get nncp "$name" \
-        -o jsonpath='{range .spec.desiredState.interfaces[*]}{.type}{"\n"}{end}' \
-        2>/dev/null || true)
-
-    if echo "$types" | grep -qx "ovs-bridge"; then
-        NNCP_IFACE_TYPE="ovs-bridge"
-        BRIDGE_NAME=$(oc get nncp "$name" \
-            -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="ovs-bridge")]}{.name}{end}' \
-            2>/dev/null || true)
-        BRIDGE_INTERFACE=$(oc get nncp "$name" \
-            -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="ovs-bridge")]}{.bridge.port[0].name}{end}' \
-            2>/dev/null || true)
-        local _ln
-        _ln=$(oc get nncp "$name" \
-            -o jsonpath='{.spec.desiredState.ovn.bridge-mappings[0].localnet}' \
-            2>/dev/null || true)
-        [ -n "$_ln" ] && LOCALNET_NAME="$_ln"
-    elif echo "$types" | grep -qx "linux-bridge"; then
-        BRIDGE_NAME=$(oc get nncp "$name" \
-            -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="linux-bridge")]}{.name}{end}' \
-            2>/dev/null || true)
-        BRIDGE_INTERFACE=$(oc get nncp "$name" \
-            -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="linux-bridge")]}{.bridge.port[0].name}{end}' \
-            2>/dev/null || true)
-        if echo "$types" | grep -qx "bond"; then
-            NNCP_IFACE_TYPE="bond"
-            BOND_NAME=$(oc get nncp "$name" \
-                -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="bond")]}{.name}{end}' \
-                2>/dev/null || true)
-        elif echo "$types" | grep -qx "vlan"; then
-            NNCP_IFACE_TYPE="vlan"
-        else
-            NNCP_IFACE_TYPE="linux-bridge"
-        fi
-    else
-        NNCP_IFACE_TYPE="linux-bridge"
-        BRIDGE_NAME=$(oc get nncp "$name" \
-            -o jsonpath='{.spec.desiredState.interfaces[0].name}' 2>/dev/null || true)
-    fi
+    detect_nncp_type "$@"
 }
 
 _nncp_type_label() {
@@ -708,13 +668,15 @@ step_nncp() {
         local -a nncp_names nncp_avails
         while read -r name; do
             [ -z "$name" ] && continue
-            local avail types_raw itype ibridge
+            local avail types_raw itype ibridge _raw_st=""
             avail=$(oc get nncp "$name" \
                 -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' \
                 2>/dev/null || true)
-            types_raw=$(oc get nncp "$name" \
-                -o jsonpath='{range .spec.desiredState.interfaces[*]}{.type}{"\n"}{end}' \
+            _raw_st=$(oc get nncp "$name" \
+                -o jsonpath='{range .spec.desiredState.interfaces[*]}{.state}{"\t"}{.type}{"\n"}{end}' \
                 2>/dev/null || true)
+            types_raw=""
+            [ -n "$_raw_st" ] && types_raw=$(echo "$_raw_st" | awk -F'\t' '$1 != "absent" {print $2}') || true
             if echo "$types_raw" | grep -qx "ovs-bridge"; then
                 itype="ovs-bridge"
                 ibridge=$(oc get nncp "$name" \
