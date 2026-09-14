@@ -275,6 +275,7 @@ detect_nncp_type() {
         types=$(echo "$_raw" | awk -F'\t' '$1 != "absent" {print $2}') || true
     fi
 
+    # ── Detect interface type ──
     if echo "$types" | grep -qx "ovs-bridge"; then
         NNCP_IFACE_TYPE="ovs-bridge"
         BRIDGE_NAME=$(oc get nncp "$name" \
@@ -283,24 +284,6 @@ detect_nncp_type() {
         BRIDGE_INTERFACE=$(oc get nncp "$name" \
             -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="ovs-bridge")]}{.bridge.port[0].name}{end}' \
             2>/dev/null) || true
-        # Read all bridge-mappings (localnet\tbridge format)
-        local _all_mappings=""
-        _all_mappings=$(oc get nncp "$name" \
-            -o jsonpath='{range .spec.desiredState.ovn.bridge-mappings[*]}{.localnet}{"\t"}{.bridge}{"\n"}{end}' \
-            2>/dev/null) || true
-        if [ -n "$_all_mappings" ]; then
-            LOCALNET_MAPPINGS="$_all_mappings"
-            # Default: prefer first non-br-ex mapping; fall back to first mapping
-            local _best="" _first=""
-            while IFS=$'\t' read -r _ln _br; do
-                [ -z "$_ln" ] && continue
-                [ -z "$_first" ] && _first="$_ln"
-                if [ "$_br" != "br-ex" ] && [ -z "$_best" ]; then
-                    _best="$_ln"
-                fi
-            done <<< "$_all_mappings"
-            LOCALNET_NAME="${_best:-$_first}"
-        fi
     elif echo "$types" | grep -qx "linux-bridge"; then
         BRIDGE_NAME=$(oc get nncp "$name" \
             -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="linux-bridge")]}{.name}{end}' \
@@ -322,6 +305,27 @@ detect_nncp_type() {
         NNCP_IFACE_TYPE="linux-bridge"
         BRIDGE_NAME=$(oc get nncp "$name" \
             -o jsonpath='{.spec.desiredState.interfaces[0].name}' 2>/dev/null) || true
+    fi
+
+    # ── Detect bridge-mappings (always, regardless of interface presence) ──
+    local _all_mappings=""
+    _all_mappings=$(oc get nncp "$name" \
+        -o jsonpath='{range .spec.desiredState.ovn.bridge-mappings[*]}{.localnet}{"\t"}{.bridge}{"\n"}{end}' \
+        2>/dev/null) || true
+    if [ -n "$_all_mappings" ]; then
+        # Presence of bridge-mappings implies ovs-bridge type
+        NNCP_IFACE_TYPE="ovs-bridge"
+        LOCALNET_MAPPINGS="$_all_mappings"
+        # Default: prefer first non-br-ex mapping; fall back to first mapping
+        local _best="" _first=""
+        while IFS=$'\t' read -r _ln _br; do
+            [ -z "$_ln" ] && continue
+            [ -z "$_first" ] && _first="$_ln"
+            if [ "$_br" != "br-ex" ] && [ -z "$_best" ]; then
+                _best="$_ln"
+            fi
+        done <<< "$_all_mappings"
+        LOCALNET_NAME="${_best:-$_first}"
     fi
 
     eval "$_prev_opts"

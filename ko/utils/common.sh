@@ -275,6 +275,7 @@ detect_nncp_type() {
         types=$(echo "$_raw" | awk -F'\t' '$1 != "absent" {print $2}') || true
     fi
 
+    # ── 인터페이스 유형 감지 ──
     if echo "$types" | grep -qx "ovs-bridge"; then
         NNCP_IFACE_TYPE="ovs-bridge"
         BRIDGE_NAME=$(oc get nncp "$name" \
@@ -283,24 +284,6 @@ detect_nncp_type() {
         BRIDGE_INTERFACE=$(oc get nncp "$name" \
             -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="ovs-bridge")]}{.bridge.port[0].name}{end}' \
             2>/dev/null) || true
-        # 모든 bridge-mapping 읽기 (localnet\tbridge 형식)
-        local _all_mappings=""
-        _all_mappings=$(oc get nncp "$name" \
-            -o jsonpath='{range .spec.desiredState.ovn.bridge-mappings[*]}{.localnet}{"\t"}{.bridge}{"\n"}{end}' \
-            2>/dev/null) || true
-        if [ -n "$_all_mappings" ]; then
-            LOCALNET_MAPPINGS="$_all_mappings"
-            # 기본 선택: br-ex가 아닌 첫 번째 매핑 우선, 없으면 첫 번째 매핑 사용
-            local _best="" _first=""
-            while IFS=$'\t' read -r _ln _br; do
-                [ -z "$_ln" ] && continue
-                [ -z "$_first" ] && _first="$_ln"
-                if [ "$_br" != "br-ex" ] && [ -z "$_best" ]; then
-                    _best="$_ln"
-                fi
-            done <<< "$_all_mappings"
-            LOCALNET_NAME="${_best:-$_first}"
-        fi
     elif echo "$types" | grep -qx "linux-bridge"; then
         BRIDGE_NAME=$(oc get nncp "$name" \
             -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="linux-bridge")]}{.name}{end}' \
@@ -322,6 +305,27 @@ detect_nncp_type() {
         NNCP_IFACE_TYPE="linux-bridge"
         BRIDGE_NAME=$(oc get nncp "$name" \
             -o jsonpath='{.spec.desiredState.interfaces[0].name}' 2>/dev/null) || true
+    fi
+
+    # ── bridge-mapping 감지 (인터페이스 유무와 무관하게 항상 확인) ──
+    local _all_mappings=""
+    _all_mappings=$(oc get nncp "$name" \
+        -o jsonpath='{range .spec.desiredState.ovn.bridge-mappings[*]}{.localnet}{"\t"}{.bridge}{"\n"}{end}' \
+        2>/dev/null) || true
+    if [ -n "$_all_mappings" ]; then
+        # bridge-mapping이 있으면 ovs-bridge 유형으로 취급
+        NNCP_IFACE_TYPE="ovs-bridge"
+        LOCALNET_MAPPINGS="$_all_mappings"
+        # 기본 선택: br-ex가 아닌 첫 번째 매핑 우선, 없으면 첫 번째 매핑 사용
+        local _best="" _first=""
+        while IFS=$'\t' read -r _ln _br; do
+            [ -z "$_ln" ] && continue
+            [ -z "$_first" ] && _first="$_ln"
+            if [ "$_br" != "br-ex" ] && [ -z "$_best" ]; then
+                _best="$_ln"
+            fi
+        done <<< "$_all_mappings"
+        LOCALNET_NAME="${_best:-$_first}"
     fi
 
     eval "$_prev_opts"
