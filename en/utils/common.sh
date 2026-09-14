@@ -267,14 +267,9 @@ detect_nncp_type() {
     local name="$1"
     local types
     # Exclude interfaces with state=="absent"; include up and unset (default)
-    types=$(oc get nncp "$name" -o json 2>/dev/null | \
-        python3 -c "
-import sys,json
-d=json.load(sys.stdin)
-for i in d.get('spec',{}).get('desiredState',{}).get('interfaces',[]):
-    if i.get('state','up')!='absent':
-        print(i.get('type',''))
-" 2>/dev/null || true)
+    types=$(oc get nncp "$name" \
+        -o jsonpath='{range .spec.desiredState.interfaces[*]}{.state}{"\t"}{.type}{"\n"}{end}' \
+        2>/dev/null | awk -F'\t' '$1 != "absent" {print $2}' || true)
 
     if echo "$types" | grep -qx "ovs-bridge"; then
         NNCP_IFACE_TYPE="ovs-bridge"
