@@ -239,6 +239,7 @@ preflight() {
     if [ "$POLICY_MODE" = "2" ]; then
         if [ -n "${NNCP_NAME:-}" ] && oc get nncp "$NNCP_NAME" &>/dev/null; then
             detect_nncp_type "$NNCP_NAME"
+            select_localnet
         fi
         resolve_nad_name
         save_network_env

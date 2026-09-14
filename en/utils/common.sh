@@ -283,11 +283,24 @@ detect_nncp_type() {
         BRIDGE_INTERFACE=$(oc get nncp "$name" \
             -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="ovs-bridge")]}{.bridge.port[0].name}{end}' \
             2>/dev/null) || true
-        local _ln=""
-        _ln=$(oc get nncp "$name" \
-            -o jsonpath='{.spec.desiredState.ovn.bridge-mappings[0].localnet}' \
+        # Read all bridge-mappings (localnet\tbridge format)
+        local _all_mappings=""
+        _all_mappings=$(oc get nncp "$name" \
+            -o jsonpath='{range .spec.desiredState.ovn.bridge-mappings[*]}{.localnet}{"\t"}{.bridge}{"\n"}{end}' \
             2>/dev/null) || true
-        [ -n "$_ln" ] && LOCALNET_NAME="$_ln"
+        if [ -n "$_all_mappings" ]; then
+            LOCALNET_MAPPINGS="$_all_mappings"
+            # Default: prefer first non-br-ex mapping; fall back to first mapping
+            local _best="" _first=""
+            while IFS=$'\t' read -r _ln _br; do
+                [ -z "$_ln" ] && continue
+                [ -z "$_first" ] && _first="$_ln"
+                if [ "$_br" != "br-ex" ] && [ -z "$_best" ]; then
+                    _best="$_ln"
+                fi
+            done <<< "$_all_mappings"
+            LOCALNET_NAME="${_best:-$_first}"
+        fi
     elif echo "$types" | grep -qx "linux-bridge"; then
         BRIDGE_NAME=$(oc get nncp "$name" \
             -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="linux-bridge")]}{.name}{end}' \
@@ -312,6 +325,53 @@ detect_nncp_type() {
     fi
 
     eval "$_prev_opts"
+}
+
+# ---------------------------------------------------------------------------
+# select_localnet() — show bridge-mapping list and select localnet
+#   Shows list if NNCP has 2+ bridge-mappings; auto-selects if only 1
+#   sets: LOCALNET_NAME
+# ---------------------------------------------------------------------------
+select_localnet() {
+    [ "${NNCP_IFACE_TYPE:-}" != "ovs-bridge" ] && return 0
+    local _mappings="${LOCALNET_MAPPINGS:-}"
+    [ -z "$_mappings" ] && return 0
+
+    # Remove empty lines and count mappings
+    local _clean
+    _clean=$(echo "$_mappings" | grep -v '^$' || true)
+    local _count
+    _count=$(echo "$_clean" | wc -l | tr -d ' ')
+
+    if [ "$_count" -le 1 ]; then
+        # Single mapping — use automatically
+        print_info "Localnet: ${LOCALNET_NAME}"
+        return 0
+    fi
+
+    echo ""
+    print_info "NNCP bridge-mapping list:"
+    local _idx=0
+    while IFS=$'\t' read -r _ln _br; do
+        [ -z "$_ln" ] && continue
+        _idx=$((_idx + 1))
+        local _marker=""
+        [ "$_ln" = "$LOCALNET_NAME" ] && _marker=" ${GREEN}← default${NC}"
+        echo -e "    ${GREEN}${_idx})${NC} ${_ln}  →  ${_br}${_marker}"
+    done <<< "$_clean"
+    echo -e "    ${GREEN}$((_idx + 1)))${NC} Enter manually"
+    echo ""
+
+    read -r -p "  Select [1-$((_idx + 1)), default: ${LOCALNET_NAME}]: " _sel
+    if [ -n "$_sel" ]; then
+        if [ "$_sel" = "$((_idx + 1))" ]; then
+            read -r -p "  Enter localnet name: " _custom
+            [ -n "$_custom" ] && LOCALNET_NAME="$_custom"
+        elif [[ "$_sel" =~ ^[0-9]+$ ]] && [ "$_sel" -ge 1 ] && [ "$_sel" -le "$_idx" ]; then
+            LOCALNET_NAME=$(echo "$_clean" | sed -n "${_sel}p" | cut -f1)
+        fi
+    fi
+    print_ok "Localnet: ${LOCALNET_NAME}"
 }
 
 # ---------------------------------------------------------------------------

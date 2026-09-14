@@ -153,6 +153,7 @@ preflight() {
 
     if [ -n "$NNCP_NAME" ] && oc get nncp "$NNCP_NAME" &>/dev/null; then
         detect_nncp_type "$NNCP_NAME"
+        select_localnet
     fi
     resolve_nad_name
     save_network_env
@@ -161,6 +162,7 @@ preflight() {
     print_info "  VM_NS            : ${VM_NS}"
     print_info "  BRIDGE_NAME      : ${BRIDGE_NAME}"
     print_info "  NNCP_IFACE_TYPE  : ${NNCP_IFACE_TYPE}"
+    print_info "  LOCALNET_NAME    : ${LOCALNET_NAME}"
     print_info "  NAD_NAME         : ${NAD_NAME}"
 
     if ! oc whoami &>/dev/null; then
@@ -191,6 +193,7 @@ preflight() {
             [ -z "$_input_nncp" ] && _input_nncp="$_first_nncp"
             NNCP_NAME="$_input_nncp"
             detect_nncp_type "$NNCP_NAME"
+            select_localnet
             print_ok "NNCP '${NNCP_NAME}' 사용 (유형: $(nncp_type_label "$NNCP_IFACE_TYPE"), bridge: ${BRIDGE_NAME})"
         else
             print_warn "사용 가능한 NNCP가 없습니다. 먼저 02-network를 실행해 주세요."
