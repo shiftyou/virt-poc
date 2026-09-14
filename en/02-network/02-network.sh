@@ -696,6 +696,7 @@ step_nncp() {
             NNCP_NAME="${nncp_names[$arr_idx]}"
             local avail="${nncp_avails[$arr_idx]}"
             _detect_nncp_type "$NNCP_NAME"
+            select_localnet
             print_ok "Selected NNCP: ${NNCP_NAME} (type: $(_nncp_type_label "$NNCP_IFACE_TYPE"), bridge: ${BRIDGE_NAME}, Available: ${avail})"
 
             echo ""
