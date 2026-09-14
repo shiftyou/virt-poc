@@ -193,16 +193,16 @@ step_datavolume() {
     local url_filename
     url_filename=$(basename "$GOLDEN_IMAGE_URL")
 
-    local base_dir
+    local base_dir repo_root
     base_dir="$(cd "${SCRIPT_DIR}/.." && pwd)"
-
-    print_info "로컬 파일 확인: ${base_dir}/${url_filename}"
-    print_info "로컬 파일 확인: $(pwd)/${url_filename}"
+    repo_root="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
     if [ -n "$GOLDEN_IMAGE_LOCAL" ] && [ -f "$GOLDEN_IMAGE_LOCAL" ]; then
         local_qcow2="$(cd "$(dirname "$GOLDEN_IMAGE_LOCAL")" && pwd)/$(basename "$GOLDEN_IMAGE_LOCAL")"
     elif [ -f "${base_dir}/${url_filename}" ]; then
         local_qcow2="${base_dir}/${url_filename}"
+    elif [ -f "${repo_root}/downloads/images/${url_filename}" ]; then
+        local_qcow2="${repo_root}/downloads/images/${url_filename}"
     elif [ -f "$(pwd)/${url_filename}" ]; then
         local_qcow2="$(pwd)/${url_filename}"
     fi
