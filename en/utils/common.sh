@@ -266,10 +266,15 @@ auto_detect_odf() {
 detect_nncp_type() {
     local name="$1"
     local types
-    # Only consider interfaces with state == "up" (ignore absent)
-    types=$(oc get nncp "$name" \
-        -o jsonpath='{range .spec.desiredState.interfaces[?(@.state=="up")]}{.type}{"\n"}{end}' \
-        2>/dev/null || true)
+    # Exclude interfaces with state=="absent"; include up and unset (default)
+    types=$(oc get nncp "$name" -o json 2>/dev/null | \
+        python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+for i in d.get('spec',{}).get('desiredState',{}).get('interfaces',[]):
+    if i.get('state','up')!='absent':
+        print(i.get('type',''))
+" 2>/dev/null || true)
 
     if echo "$types" | grep -qx "ovs-bridge"; then
         NNCP_IFACE_TYPE="ovs-bridge"
