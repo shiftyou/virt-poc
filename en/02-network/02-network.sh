@@ -839,8 +839,17 @@ EOF
 }
 
 step_nad_ovn_localnet_vlan() {
-    print_step "2/4  NAD — OVN Localnet + VLAN ${VLAN_ID} (${LOCALNET_NAME})"
     _ensure_namespace
+
+    local _vlan_line=""
+    if [ "${NNCP_BRIDGE_HAS_VLAN:-}" = "true" ]; then
+        print_step "2/4  NAD — OVN Localnet (${LOCALNET_NAME}) — VLAN handled by NNCP, skipping NAD vlanID"
+        print_warn "NNCP bridge port is a VLAN sub-interface (${BRIDGE_INTERFACE}), not adding vlanID to NAD."
+    else
+        print_step "2/4  NAD — OVN Localnet + VLAN ${VLAN_ID} (${LOCALNET_NAME})"
+        _vlan_line="
+        \"vlanID\": ${VLAN_ID},"
+    fi
 
     cat > nad-${NAD_NAME}.yaml <<EOF
 apiVersion: k8s.cni.cncf.io/v1
@@ -854,14 +863,17 @@ spec:
         "cniVersion": "0.3.1",
         "name": "${LOCALNET_NAME}",
         "type": "ovn-k8s-cni-overlay",
-        "topology": "localnet",
-        "vlanID": ${VLAN_ID},
+        "topology": "localnet",${_vlan_line}
         "netAttachDefName": "${NAD_NAMESPACE}/${NAD_NAME}"
     }
 EOF
     echo "Generated file: nad-${NAD_NAME}.yaml"
     oc apply -f nad-${NAD_NAME}.yaml
-    print_ok "NAD ${NAD_NAME} registered (localnet: ${LOCALNET_NAME}, VLAN ${VLAN_ID})"
+    if [ "${NNCP_BRIDGE_HAS_VLAN:-}" = "true" ]; then
+        print_ok "NAD ${NAD_NAME} registered (localnet: ${LOCALNET_NAME}, VLAN handled by NNCP)"
+    else
+        print_ok "NAD ${NAD_NAME} registered (localnet: ${LOCALNET_NAME}, VLAN ${VLAN_ID})"
+    fi
 }
 
 step_nad() {
@@ -1153,7 +1165,7 @@ EOF
     # NAD sample — generate config block per method
     local nad_config_block nad_method_label
     if [ "$NNCP_IFACE_TYPE" = "ovs-bridge" ]; then
-        if [ "$NET_TYPE" = "2" ]; then
+        if [ "$NET_TYPE" = "2" ] && [ "${NNCP_BRIDGE_HAS_VLAN:-}" != "true" ]; then
             nad_method_label="OVN Localnet+VLAN"
             nad_config_block="    {
         \"cniVersion\": \"0.3.1\",

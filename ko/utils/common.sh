@@ -328,6 +328,19 @@ detect_nncp_type() {
         LOCALNET_NAME="${_best:-$_first}"
     fi
 
+    # ── NNCP에 VLAN 서브인터페이스가 있는지 감지 ──
+    #   OVS bridge 포트가 VLAN 서브인터페이스이면 NAD에 vlanID를 중복 지정하면 안 됨
+    NNCP_BRIDGE_HAS_VLAN=""
+    if [ "$NNCP_IFACE_TYPE" = "ovs-bridge" ] && [ -n "$BRIDGE_INTERFACE" ]; then
+        local _vlan_ifaces=""
+        _vlan_ifaces=$(oc get nncp "$name" \
+            -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="vlan")]}{.name}{"\n"}{end}' \
+            2>/dev/null) || true
+        if [ -n "$_vlan_ifaces" ] && echo "$_vlan_ifaces" | grep -qxF "$BRIDGE_INTERFACE"; then
+            NNCP_BRIDGE_HAS_VLAN=true
+        fi
+    fi
+
     eval "$_prev_opts"
 }
 

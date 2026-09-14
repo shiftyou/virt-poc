@@ -247,7 +247,7 @@ step_nad() {
 
     local nad_file="nad-${NAD_NAME}.yaml"
     if [ "$NNCP_IFACE_TYPE" = "ovs-bridge" ]; then
-        if [ "$NET_TYPE" = "2" ]; then
+        if [ "$NET_TYPE" = "2" ] && [ "${NNCP_BRIDGE_HAS_VLAN:-}" != "true" ]; then
             cat > "$nad_file" <<EOF
 apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition
@@ -266,6 +266,8 @@ spec:
     }
 EOF
         else
+            [ "${NNCP_BRIDGE_HAS_VLAN:-}" = "true" ] && \
+                print_warn "NNCP 브릿지 포트가 VLAN 서브인터페이스이므로 NAD에 vlanID를 생략합니다."
             cat > "$nad_file" <<EOF
 apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition

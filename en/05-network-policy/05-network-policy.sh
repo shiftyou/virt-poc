@@ -308,7 +308,7 @@ step_nad() {
         fi
 
         local nad_file="nad-${NAD_NAME}-${NS}.yaml"
-        if [ "$NET_TYPE" = "2" ]; then
+        if [ "$NET_TYPE" = "2" ] && [ "${NNCP_BRIDGE_HAS_VLAN:-}" != "true" ]; then
             cat > "$nad_file" <<EOF
 apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition
@@ -327,6 +327,8 @@ spec:
     }
 EOF
         else
+            [ "${NNCP_BRIDGE_HAS_VLAN:-}" = "true" ] && \
+                print_warn "NNCP bridge port is a VLAN sub-interface, skipping vlanID in NAD."
             cat > "$nad_file" <<EOF
 apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition

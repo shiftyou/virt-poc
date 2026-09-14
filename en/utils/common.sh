@@ -328,6 +328,19 @@ detect_nncp_type() {
         LOCALNET_NAME="${_best:-$_first}"
     fi
 
+    # ── Detect VLAN sub-interface on OVS bridge port ──
+    #   If OVS bridge port is a VLAN sub-interface, NAD must NOT duplicate vlanID
+    NNCP_BRIDGE_HAS_VLAN=""
+    if [ "$NNCP_IFACE_TYPE" = "ovs-bridge" ] && [ -n "$BRIDGE_INTERFACE" ]; then
+        local _vlan_ifaces=""
+        _vlan_ifaces=$(oc get nncp "$name" \
+            -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="vlan")]}{.name}{"\n"}{end}' \
+            2>/dev/null) || true
+        if [ -n "$_vlan_ifaces" ] && echo "$_vlan_ifaces" | grep -qxF "$BRIDGE_INTERFACE"; then
+            NNCP_BRIDGE_HAS_VLAN=true
+        fi
+    fi
+
     eval "$_prev_opts"
 }
 

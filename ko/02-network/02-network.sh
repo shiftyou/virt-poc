@@ -839,8 +839,17 @@ EOF
 }
 
 step_nad_ovn_localnet_vlan() {
-    print_step "2/4  NAD — OVN Localnet + VLAN ${VLAN_ID} (${LOCALNET_NAME})"
     _ensure_namespace
+
+    local _vlan_line=""
+    if [ "${NNCP_BRIDGE_HAS_VLAN:-}" = "true" ]; then
+        print_step "2/4  NAD — OVN Localnet (${LOCALNET_NAME}) — NNCP에서 VLAN 처리, NAD vlanID 생략"
+        print_warn "NNCP 브릿지 포트가 VLAN 서브인터페이스(${BRIDGE_INTERFACE})이므로 NAD에 vlanID를 지정하지 않습니다."
+    else
+        print_step "2/4  NAD — OVN Localnet + VLAN ${VLAN_ID} (${LOCALNET_NAME})"
+        _vlan_line="
+        \"vlanID\": ${VLAN_ID},"
+    fi
 
     cat > nad-${NAD_NAME}.yaml <<EOF
 apiVersion: k8s.cni.cncf.io/v1
@@ -854,14 +863,17 @@ spec:
         "cniVersion": "0.3.1",
         "name": "${LOCALNET_NAME}",
         "type": "ovn-k8s-cni-overlay",
-        "topology": "localnet",
-        "vlanID": ${VLAN_ID},
+        "topology": "localnet",${_vlan_line}
         "netAttachDefName": "${NAD_NAMESPACE}/${NAD_NAME}"
     }
 EOF
     echo "생성된 파일: nad-${NAD_NAME}.yaml"
     oc apply -f nad-${NAD_NAME}.yaml
-    print_ok "NAD ${NAD_NAME} 등록됨 (localnet: ${LOCALNET_NAME}, VLAN ${VLAN_ID})"
+    if [ "${NNCP_BRIDGE_HAS_VLAN:-}" = "true" ]; then
+        print_ok "NAD ${NAD_NAME} 등록됨 (localnet: ${LOCALNET_NAME}, VLAN은 NNCP에서 처리)"
+    else
+        print_ok "NAD ${NAD_NAME} 등록됨 (localnet: ${LOCALNET_NAME}, VLAN ${VLAN_ID})"
+    fi
 }
 
 step_nad() {
@@ -1153,7 +1165,7 @@ EOF
     # NAD 샘플 — 방식별 config 블록 생성
     local nad_config_block nad_method_label
     if [ "$NNCP_IFACE_TYPE" = "ovs-bridge" ]; then
-        if [ "$NET_TYPE" = "2" ]; then
+        if [ "$NET_TYPE" = "2" ] && [ "${NNCP_BRIDGE_HAS_VLAN:-}" != "true" ]; then
             nad_method_label="OVN Localnet+VLAN"
             nad_config_block="    {
         \"cniVersion\": \"0.3.1\",
