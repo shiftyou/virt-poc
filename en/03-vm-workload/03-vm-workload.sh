@@ -247,44 +247,31 @@ step_nad() {
 
     local nad_file="nad-${NAD_NAME}.yaml"
     if [ "$NNCP_IFACE_TYPE" = "ovs-bridge" ]; then
+        local _vlan_line=""
         if [ "$NET_TYPE" = "2" ] && [ "${NNCP_BRIDGE_HAS_VLAN:-}" != "true" ]; then
-            cat > "$nad_file" <<EOF
-apiVersion: k8s.cni.cncf.io/v1
-kind: NetworkAttachmentDefinition
-metadata:
-  name: ${NAD_NAME}
-  namespace: ${VM_NS}
-spec:
-  config: |-
-    {
-        "cniVersion": "0.3.1",
-        "name": "${LOCALNET_NAME}",
-        "type": "ovn-k8s-cni-overlay",
-        "topology": "localnet",
-        "vlanID": ${VLAN_ID},
-        "netAttachDefName": "${VM_NS}/${NAD_NAME}"
-    }
-EOF
-        else
-            [ "${NNCP_BRIDGE_HAS_VLAN:-}" = "true" ] && \
-                print_warn "NNCP bridge port is a VLAN sub-interface, skipping vlanID in NAD."
-            cat > "$nad_file" <<EOF
-apiVersion: k8s.cni.cncf.io/v1
-kind: NetworkAttachmentDefinition
-metadata:
-  name: ${NAD_NAME}
-  namespace: ${VM_NS}
-spec:
-  config: |-
-    {
-        "cniVersion": "0.3.1",
-        "name": "${LOCALNET_NAME}",
-        "type": "ovn-k8s-cni-overlay",
-        "topology": "localnet",
-        "netAttachDefName": "${VM_NS}/${NAD_NAME}"
-    }
-EOF
+            _vlan_line="
+        \"vlanID\": ${VLAN_ID},"
+        elif [ "${NNCP_BRIDGE_HAS_VLAN:-}" = "true" ]; then
+            print_warn "NNCP bridge port is a VLAN sub-interface, skipping vlanID in NAD."
         fi
+            cat > "$nad_file" <<EOF
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: ${NAD_NAME}
+  namespace: ${VM_NS}
+spec:
+  config: |-
+    {
+        "cniVersion": "0.3.1",
+        "name": "${LOCALNET_NAME}",
+        "type": "ovn-k8s-cni-overlay",
+        "topology": "localnet",${_vlan_line}
+        "netAttachDefName": "${VM_NS}/${NAD_NAME}",
+        "physicalNetworkName": "${LOCALNET_NAME}",
+        "mtu": ${NAD_MTU:-1500}
+    }
+EOF
     elif [ "$NET_TYPE" = "2" ] && [ "$NNCP_IFACE_TYPE" != "vlan" ]; then
         cat > "$nad_file" <<EOF
 apiVersion: k8s.cni.cncf.io/v1

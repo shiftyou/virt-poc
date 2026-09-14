@@ -310,44 +310,31 @@ step_nad() {
         fi
 
         local nad_file="nad-${NAD_NAME}-${NS}.yaml"
+        local _vlan_line=""
         if [ "$NET_TYPE" = "2" ] && [ "${NNCP_BRIDGE_HAS_VLAN:-}" != "true" ]; then
-            cat > "$nad_file" <<EOF
-apiVersion: k8s.cni.cncf.io/v1
-kind: NetworkAttachmentDefinition
-metadata:
-  name: ${NAD_NAME}
-  namespace: ${NS}
-spec:
-  config: |-
-    {
-        "cniVersion": "0.3.1",
-        "name": "${LOCALNET_NAME}",
-        "type": "ovn-k8s-cni-overlay",
-        "topology": "localnet",
-        "vlanID": ${VLAN_ID},
-        "netAttachDefName": "${NS}/${NAD_NAME}"
-    }
-EOF
-        else
-            [ "${NNCP_BRIDGE_HAS_VLAN:-}" = "true" ] && \
-                print_warn "NNCP 브릿지 포트가 VLAN 서브인터페이스이므로 NAD에 vlanID를 생략합니다."
-            cat > "$nad_file" <<EOF
-apiVersion: k8s.cni.cncf.io/v1
-kind: NetworkAttachmentDefinition
-metadata:
-  name: ${NAD_NAME}
-  namespace: ${NS}
-spec:
-  config: |-
-    {
-        "cniVersion": "0.3.1",
-        "name": "${LOCALNET_NAME}",
-        "type": "ovn-k8s-cni-overlay",
-        "topology": "localnet",
-        "netAttachDefName": "${NS}/${NAD_NAME}"
-    }
-EOF
+            _vlan_line="
+        \"vlanID\": ${VLAN_ID},"
+        elif [ "${NNCP_BRIDGE_HAS_VLAN:-}" = "true" ]; then
+            print_warn "NNCP 브릿지 포트가 VLAN 서브인터페이스이므로 NAD에 vlanID를 생략합니다."
         fi
+        cat > "$nad_file" <<EOF
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: ${NAD_NAME}
+  namespace: ${NS}
+spec:
+  config: |-
+    {
+        "cniVersion": "0.3.1",
+        "name": "${LOCALNET_NAME}",
+        "type": "ovn-k8s-cni-overlay",
+        "topology": "localnet",${_vlan_line}
+        "netAttachDefName": "${NS}/${NAD_NAME}",
+        "physicalNetworkName": "${LOCALNET_NAME}",
+        "mtu": ${NAD_MTU:-1500}
+    }
+EOF
         echo "생성된 파일: ${nad_file}"
         oc apply -f "$nad_file"
         print_ok "NAD ${NAD_NAME} 등록됨 (namespace: ${NS})"

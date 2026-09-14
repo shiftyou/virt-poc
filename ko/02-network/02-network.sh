@@ -830,7 +830,9 @@ spec:
         "name": "${LOCALNET_NAME}",
         "type": "ovn-k8s-cni-overlay",
         "topology": "localnet",
-        "netAttachDefName": "${NAD_NAMESPACE}/${NAD_NAME}"
+        "netAttachDefName": "${NAD_NAMESPACE}/${NAD_NAME}",
+        "physicalNetworkName": "${LOCALNET_NAME}",
+        "mtu": ${NAD_MTU:-1500}
     }
 EOF
     echo "생성된 파일: nad-${NAD_NAME}.yaml"
@@ -864,7 +866,9 @@ spec:
         "name": "${LOCALNET_NAME}",
         "type": "ovn-k8s-cni-overlay",
         "topology": "localnet",${_vlan_line}
-        "netAttachDefName": "${NAD_NAMESPACE}/${NAD_NAME}"
+        "netAttachDefName": "${NAD_NAMESPACE}/${NAD_NAME}",
+        "physicalNetworkName": "${LOCALNET_NAME}",
+        "mtu": ${NAD_MTU:-1500}
     }
 EOF
     echo "생성된 파일: nad-${NAD_NAME}.yaml"
@@ -1173,7 +1177,9 @@ EOF
         \"type\": \"ovn-k8s-cni-overlay\",
         \"topology\": \"localnet\",
         \"vlanID\": ${VLAN_ID},
-        \"netAttachDefName\": \"${NAD_NAMESPACE}/${NAD_NAME}\"
+        \"netAttachDefName\": \"${NAD_NAMESPACE}/${NAD_NAME}\",
+        \"physicalNetworkName\": \"${LOCALNET_NAME}\",
+        \"mtu\": ${NAD_MTU:-1500}
     }"
         else
             nad_method_label="OVN Localnet"
@@ -1182,7 +1188,9 @@ EOF
         \"name\": \"${LOCALNET_NAME}\",
         \"type\": \"ovn-k8s-cni-overlay\",
         \"topology\": \"localnet\",
-        \"netAttachDefName\": \"${NAD_NAMESPACE}/${NAD_NAME}\"
+        \"netAttachDefName\": \"${NAD_NAMESPACE}/${NAD_NAME}\",
+        \"physicalNetworkName\": \"${LOCALNET_NAME}\",
+        \"mtu\": ${NAD_MTU:-1500}
     }"
         fi
     else
