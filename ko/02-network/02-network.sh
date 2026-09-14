@@ -668,36 +668,13 @@ step_nncp() {
         local -a nncp_names nncp_avails
         while read -r name; do
             [ -z "$name" ] && continue
-            local avail types_raw itype ibridge _raw_st=""
+            local avail itype ibridge
             avail=$(oc get nncp "$name" \
                 -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' \
                 2>/dev/null || true)
-            _raw_st=$(oc get nncp "$name" \
-                -o jsonpath='{range .spec.desiredState.interfaces[*]}{.state}{"\t"}{.type}{"\n"}{end}' \
-                2>/dev/null || true)
-            types_raw=""
-            [ -n "$_raw_st" ] && types_raw=$(echo "$_raw_st" | awk -F'\t' '$1 != "absent" {print $2}') || true
-            if echo "$types_raw" | grep -qx "ovs-bridge"; then
-                itype="ovs-bridge"
-                ibridge=$(oc get nncp "$name" \
-                    -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="ovs-bridge")]}{.name}{end}' \
-                    2>/dev/null || true)
-            elif echo "$types_raw" | grep -qx "linux-bridge"; then
-                ibridge=$(oc get nncp "$name" \
-                    -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="linux-bridge")]}{.name}{end}' \
-                    2>/dev/null || true)
-                if echo "$types_raw" | grep -qx "bond"; then
-                    itype="bond+bridge"
-                elif echo "$types_raw" | grep -qx "vlan"; then
-                    itype="vlan+bridge"
-                else
-                    itype="linux-bridge"
-                fi
-            else
-                itype="other"
-                ibridge=$(oc get nncp "$name" \
-                    -o jsonpath='{.spec.desiredState.interfaces[0].name}' 2>/dev/null || true)
-            fi
+            detect_nncp_type "$name"
+            itype=$(_nncp_type_label "$NNCP_IFACE_TYPE")
+            ibridge="${BRIDGE_NAME:-}"
             printf "  %-4s %-28s %-12s %-14s %s\n" "$idx)" "$name" "${avail:-Unknown}" "$itype" "${ibridge:-}"
             nncp_names+=("$name")
             nncp_avails+=("$avail")
@@ -940,17 +917,22 @@ step_vm() {
 
         ensure_runstrategy "$VM_NAME" "$NAD_NAMESPACE"
 
-        # 보조 NIC 추가 (NAD)
+        # 보조 NIC 추가 (NAD) — OVN localnet vs Linux Bridge 구분
+        local _net_label="secondary-net"
+        local _net_ref="${NAD_NAME}"
+        if [ "$NNCP_IFACE_TYPE" = "ovs-bridge" ]; then
+            _net_ref="${NAD_NAMESPACE}/${NAD_NAME}"
+        fi
         oc patch vm "$VM_NAME" -n "$NAD_NAMESPACE" --type=json -p='[
           {
             "op": "add",
             "path": "/spec/template/spec/domain/devices/interfaces/-",
-            "value": {"name": "bridge-net", "bridge": {}, "model": "virtio"}
+            "value": {"name": "'"${_net_label}"'", "bridge": {}, "model": "virtio"}
           },
           {
             "op": "add",
             "path": "/spec/template/spec/networks/-",
-            "value": {"name": "bridge-net", "multus": {"networkName": "'"${NAD_NAME}"'"}}
+            "value": {"name": "'"${_net_label}"'", "multus": {"networkName": "'"${_net_ref}"'"}}
           }
         ]'
 

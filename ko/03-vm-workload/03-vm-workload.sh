@@ -181,25 +181,8 @@ preflight() {
             printf "    %-35s %-15s %-20s %s\n" "NNCP 이름" "유형" "Bridge 이름" "NIC"
             echo "    ────────────────────────────────────────────────────────────────────────"
             for _n in $_all_nncps; do
-                local _b _nic _ob
-                _b=$(oc get nncp "$_n" \
-                    -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="linux-bridge")]}{.name}{end}' \
-                    2>/dev/null || true)
-                if [ -n "$_b" ]; then
-                    _nic=$(oc get nncp "$_n" \
-                        -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="linux-bridge")]}{.bridge.port[0].name}{end}' \
-                        2>/dev/null || true)
-                    printf "    %-35s %-15s %-20s %s\n" "$_n" "linux-bridge" "$_b" "${_nic:-N/A}"
-                else
-                    _ob=$(oc get nncp "$_n" \
-                        -o jsonpath='{.spec.desiredState.ovn.bridge-mappings[0].bridge}' \
-                        2>/dev/null || true)
-                    if [ -n "$_ob" ]; then
-                        printf "    %-35s %-15s %-20s %s\n" "$_n" "ovn-localnet" "$_ob" "-"
-                    else
-                        printf "    %-35s %-15s %-20s %s\n" "$_n" "unknown" "-" "-"
-                    fi
-                fi
+                detect_nncp_type "$_n"
+                printf "    %-35s %-15s %-20s %s\n" "$_n" "$(nncp_type_label "$NNCP_IFACE_TYPE")" "${BRIDGE_NAME:-N/A}" "${BRIDGE_INTERFACE:-N/A}"
             done
             echo ""
             local _first_nncp
@@ -207,16 +190,8 @@ preflight() {
             read -r -p "  사용할 NNCP 이름을 입력하세요 [기본값: ${_first_nncp}]: " _input_nncp
             [ -z "$_input_nncp" ] && _input_nncp="$_first_nncp"
             NNCP_NAME="$_input_nncp"
-            # 선택된 NNCP에서 bridge 이름 추출
-            local _new_br
-            _new_br=$(oc get nncp "$NNCP_NAME" \
-                -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="linux-bridge")]}{.name}{end}' \
-                2>/dev/null || true)
-            [ -z "$_new_br" ] && _new_br=$(oc get nncp "$NNCP_NAME" \
-                -o jsonpath='{.spec.desiredState.ovn.bridge-mappings[0].bridge}' \
-                2>/dev/null || true)
-            [ -n "$_new_br" ] && BRIDGE_NAME="$_new_br"
-            print_ok "NNCP '${NNCP_NAME}' 사용 (bridge: ${BRIDGE_NAME})"
+            detect_nncp_type "$NNCP_NAME"
+            print_ok "NNCP '${NNCP_NAME}' 사용 (유형: $(nncp_type_label "$NNCP_IFACE_TYPE"), bridge: ${BRIDGE_NAME})"
         else
             print_warn "사용 가능한 NNCP가 없습니다. 먼저 02-network를 실행해 주세요."
         fi
@@ -381,17 +356,22 @@ step_vm() {
 
     ensure_runstrategy "$VM_NAME" "$VM_NS"
 
-    # 보조 NIC 추가
+    # 보조 NIC 추가 — OVN localnet vs Linux Bridge 구분
+    local _net_label="secondary-net"
+    local _net_ref="${NAD_NAME}"
+    if [ "${NNCP_IFACE_TYPE:-}" = "ovs-bridge" ]; then
+        _net_ref="${VM_NS}/${NAD_NAME}"
+    fi
     oc patch vm "$VM_NAME" -n "$VM_NS" --type=json -p="[
       {
         \"op\": \"add\",
         \"path\": \"/spec/template/spec/domain/devices/interfaces/-\",
-        \"value\": {\"name\": \"bridge-net\", \"bridge\": {}, \"model\": \"virtio\"}
+        \"value\": {\"name\": \"${_net_label}\", \"bridge\": {}, \"model\": \"virtio\"}
       },
       {
         \"op\": \"add\",
         \"path\": \"/spec/template/spec/networks/-\",
-        \"value\": {\"name\": \"bridge-net\", \"multus\": {\"networkName\": \"${NAD_NAME}\"}}
+        \"value\": {\"name\": \"${_net_label}\", \"multus\": {\"networkName\": \"${_net_ref}\"}}
       }
     ]"
 
@@ -463,13 +443,13 @@ spec:
                   name: default
                 - bridge: {}
                   model: virtio
-                  name: bridge-net
+                  name: secondary-net
             memory:
               guest: 2Gi
           networks:
             - name: default
               pod: {}
-            - name: bridge-net
+            - name: secondary-net
               multus:
                 networkName: ${NAD_NAME}
           volumes:
