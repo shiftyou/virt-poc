@@ -2,13 +2,14 @@
 # =============================================================================
 # 05-network-policy.sh
 #
-# NetworkPolicy (Pod 네트워크) 실습 환경 구성
+# NetworkPolicy / MultiNetworkPolicy 실습 환경 구성
 #
-#   - Namespace: poc-network-policy-1, poc-network-policy-2
-#   - Policy: networking.k8s.io/v1 NetworkPolicy (Pod 네트워크 / eth0)
-#     1. deny-all               : 모든 Ingress 차단
-#     2. allow-same-network     : 동일 namespace 내 Pod 간 Ingress 허용
-#     3. allow-access-from-ns1  : NS2에서 NS1 namespace Pod의 Ingress 허용
+#   방법 1 — NetworkPolicy (eth0, pod network)
+#     Namespace: poc-network-policy-1, poc-network-policy-2
+#
+#   방법 2 — MultiNetworkPolicy (eth1, OVN localnet secondary NIC)
+#     Namespace: poc-multi-network-policy-1, poc-multi-network-policy-2
+#     사전 요구: 02-network OVS Bridge (ovs-bridge) + useMultiNetworkPolicy
 #
 # 사용법: ./05-network-policy.sh
 # =============================================================================
@@ -22,9 +23,18 @@ if [ -f "$ENV_FILE" ]; then
     set -a; source "$ENV_FILE"; set +a
 fi
 
+POLICY_MODE="${POLICY_MODE:-}"
+NNCP_IFACE_TYPE="${NNCP_IFACE_TYPE:-linux-bridge}"
+NET_TYPE="${NET_TYPE:-1}"
+NAD_NAME="${NAD_NAME:-}"
+LOCALNET_NAME="${LOCALNET_NAME:-poc-localnet}"
+VLAN_ID="${VLAN_ID:-100}"
+SECONDARY_IP_PREFIX="${SECONDARY_IP_PREFIX:-192.168.100}"
 NS1="poc-network-policy-1"
 NS2="poc-network-policy-2"
 TOTAL_STEPS=6
+POLICY_KIND="networkpolicy"
+SECONDARY_IFACE="secondary"
 
 if [ -f "${SCRIPT_DIR}/../utils/common.sh" ]; then
     source "${SCRIPT_DIR}/../utils/common.sh"
@@ -134,6 +144,74 @@ else
 fi
 
 # =============================================================================
+# 정책 방식 선택
+# =============================================================================
+choose_policy_mode() {
+    if [ -n "$POLICY_MODE" ]; then
+        configure_from_mode
+        return 0
+    fi
+
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}  정책 방식 선택${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "  ${GREEN}1)${NC} NetworkPolicy (eth0, pod network)"
+    echo -e "     ${DIM}02-network Linux Bridge / Bond / VLAN${NC}"
+    echo ""
+    echo -e "  ${GREEN}2)${NC} MultiNetworkPolicy (eth1, OVN localnet secondary NIC)"
+    echo -e "     ${DIM}02-network OVS Bridge + useMultiNetworkPolicy${NC}"
+    echo ""
+
+    local selection
+    read -r -p "  선택 [1/2, 기본값: 1]: " selection
+    [ -z "$selection" ] && selection="1"
+    case "$selection" in
+        1) POLICY_MODE="1" ;;
+        2) POLICY_MODE="2" ;;
+        *)
+            print_error "1 또는 2를 입력해 주세요."
+            exit 1
+            ;;
+    esac
+    save_to_env "POLICY_MODE" "$POLICY_MODE"
+    configure_from_mode
+}
+
+configure_from_mode() {
+    case "$POLICY_MODE" in
+        2)
+            NS1="poc-multi-network-policy-1"
+            NS2="poc-multi-network-policy-2"
+            TOTAL_STEPS=8
+            POLICY_KIND="multinetworkpolicy"
+            ;;
+        *)
+            POLICY_MODE="1"
+            NS1="poc-network-policy-1"
+            NS2="poc-network-policy-2"
+            TOTAL_STEPS=6
+            POLICY_KIND="networkpolicy"
+            ;;
+    esac
+}
+
+ensure_runstrategy() {
+    local vm="$1" ns="$2"
+    local running
+    running=$(oc get vm "$vm" -n "$ns" \
+        -o jsonpath='{.spec.running}' 2>/dev/null || true)
+    [ -z "$running" ] && return 0
+    local rs="Halted"
+    [ "$running" = "true" ] && rs="Always"
+    oc patch vm "$vm" -n "$ns" --type=json -p "[
+      {\"op\":\"remove\",\"path\":\"/spec/running\"},
+      {\"op\":\"add\",\"path\":\"/spec/runStrategy\",\"value\":\"${rs}\"}
+    ]" &>/dev/null || true
+}
+
+# =============================================================================
 # 사전 점검
 # =============================================================================
 preflight() {
@@ -156,8 +234,23 @@ preflight() {
     fi
     print_ok "poc Template 확인됨"
 
-    print_info "  NS1 : ${NS1}"
-    print_info "  NS2 : ${NS2}"
+    if [ "$POLICY_MODE" = "2" ]; then
+        if [ -n "${NNCP_NAME:-}" ] && oc get nncp "$NNCP_NAME" &>/dev/null; then
+            detect_nncp_type "$NNCP_NAME"
+        fi
+        resolve_nad_name
+        save_network_env
+        if [ "$NNCP_IFACE_TYPE" != "ovs-bridge" ]; then
+            print_warn "MultiNetworkPolicy는 OVN localnet(02-network OVS Bridge)이 권장됩니다."
+            print_warn "  현재 NNCP_IFACE_TYPE=${NNCP_IFACE_TYPE} — 계속 진행합니다."
+        fi
+        print_info "  NAD_NAME         : ${NAD_NAME}"
+        print_info "  LOCALNET_NAME    : ${LOCALNET_NAME}"
+    fi
+
+    print_info "  POLICY_MODE      : ${POLICY_MODE} (${POLICY_KIND})"
+    print_info "  NS1              : ${NS1}"
+    print_info "  NS2              : ${NS2}"
 }
 
 # =============================================================================
@@ -181,13 +274,115 @@ step_namespaces() {
 }
 
 # =============================================================================
-# Step 2: Default Deny All 정책
+# Step 2 (mode 2): MultiNetworkPolicy 활성화
 # =============================================================================
-step_deny_all() {
-    print_step "2/${TOTAL_STEPS}  Default Deny All 정책 적용"
+step_enable_mnp() {
+    [ "$POLICY_MODE" != "2" ] && return 0
+    print_step "2/${TOTAL_STEPS}  MultiNetworkPolicy 활성화"
+
+    local enabled
+    enabled=$(oc get network.operator.openshift.io cluster \
+        -o jsonpath='{.spec.useMultiNetworkPolicy}' 2>/dev/null || true)
+    if [ "$enabled" = "true" ]; then
+        print_ok "useMultiNetworkPolicy 이미 활성화됨"
+        return 0
+    fi
+
+    oc patch network.operator.openshift.io cluster --type=merge \
+        -p '{"spec":{"useMultiNetworkPolicy":true}}'
+    print_ok "useMultiNetworkPolicy 활성화됨"
+}
+
+# =============================================================================
+# Step 3 (mode 2): NAD 등록
+# =============================================================================
+step_nad() {
+    [ "$POLICY_MODE" != "2" ] && return 0
+    print_step "3/${TOTAL_STEPS}  NAD 등록 (${NAD_NAME})"
 
     for NS in "$NS1" "$NS2"; do
-        cat > "netpol-deny-all-${NS}.yaml" <<EOF
+        if oc get network-attachment-definition "$NAD_NAME" -n "$NS" &>/dev/null; then
+            print_ok "NAD ${NAD_NAME} 이미 존재 (namespace: ${NS}) — 건너뜀"
+            continue
+        fi
+
+        local nad_file="nad-${NAD_NAME}-${NS}.yaml"
+        if [ "$NET_TYPE" = "2" ]; then
+            cat > "$nad_file" <<EOF
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: ${NAD_NAME}
+  namespace: ${NS}
+spec:
+  config: |-
+    {
+        "cniVersion": "0.3.1",
+        "name": "${LOCALNET_NAME}",
+        "type": "ovn-k8s-cni-overlay",
+        "topology": "localnet",
+        "vlanID": ${VLAN_ID},
+        "netAttachDefName": "${NS}/${NAD_NAME}"
+    }
+EOF
+        else
+            cat > "$nad_file" <<EOF
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: ${NAD_NAME}
+  namespace: ${NS}
+spec:
+  config: |-
+    {
+        "cniVersion": "0.3.1",
+        "name": "${LOCALNET_NAME}",
+        "type": "ovn-k8s-cni-overlay",
+        "topology": "localnet",
+        "netAttachDefName": "${NS}/${NAD_NAME}"
+    }
+EOF
+        fi
+        echo "생성된 파일: ${nad_file}"
+        oc apply -f "$nad_file"
+        print_ok "NAD ${NAD_NAME} 등록됨 (namespace: ${NS})"
+    done
+}
+
+_policy_step_num() {
+    case "$POLICY_MODE" in
+        2) echo "$(( $1 + 2 ))" ;;
+        *) echo "$1" ;;
+    esac
+}
+
+# =============================================================================
+# Default Deny All 정책
+# =============================================================================
+step_deny_all() {
+    local step
+    step=$(_policy_step_num 2)
+    print_step "${step}/${TOTAL_STEPS}  Default Deny All 정책 적용"
+
+    for NS in "$NS1" "$NS2"; do
+        if [ "$POLICY_MODE" = "2" ]; then
+            cat > "multi-netpol-deny-all-${NS}.yaml" <<EOF
+apiVersion: k8s.cni.cncf.io/v1beta1
+kind: MultiNetworkPolicy
+metadata:
+  name: deny-all
+  namespace: ${NS}
+  annotations:
+    k8s.v1.cni.cncf.io/policy-for: ${NS}/${NAD_NAME}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+EOF
+            echo "생성된 파일: multi-netpol-deny-all-${NS}.yaml"
+            oc apply -f "multi-netpol-deny-all-${NS}.yaml"
+        else
+            cat > "netpol-deny-all-${NS}.yaml" <<EOF
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -198,8 +393,9 @@ spec:
   policyTypes:
     - Ingress
 EOF
-        echo "생성된 파일: netpol-deny-all-${NS}.yaml"
-        oc apply -f "netpol-deny-all-${NS}.yaml"
+            echo "생성된 파일: netpol-deny-all-${NS}.yaml"
+            oc apply -f "netpol-deny-all-${NS}.yaml"
+        fi
         print_ok "deny-all 적용됨 (namespace: ${NS})"
     done
 }
@@ -208,10 +404,32 @@ EOF
 # Step 3: Allow Same Network 정책
 # =============================================================================
 step_allow_same_network() {
-    print_step "3/${TOTAL_STEPS}  Allow Same Network 정책 적용"
+    local step
+    step=$(_policy_step_num 3)
+    print_step "${step}/${TOTAL_STEPS}  Allow Same Network 정책 적용"
 
     for NS in "$NS1" "$NS2"; do
-        cat > "netpol-allow-same-network-${NS}.yaml" <<EOF
+        if [ "$POLICY_MODE" = "2" ]; then
+            cat > "multi-netpol-allow-same-network-${NS}.yaml" <<EOF
+apiVersion: k8s.cni.cncf.io/v1beta1
+kind: MultiNetworkPolicy
+metadata:
+  name: allow-same-network
+  namespace: ${NS}
+  annotations:
+    k8s.v1.cni.cncf.io/policy-for: ${NS}/${NAD_NAME}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+EOF
+            echo "생성된 파일: multi-netpol-allow-same-network-${NS}.yaml"
+            oc apply -f "multi-netpol-allow-same-network-${NS}.yaml"
+        else
+            cat > "netpol-allow-same-network-${NS}.yaml" <<EOF
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -225,8 +443,9 @@ spec:
     - from:
         - podSelector: {}
 EOF
-        echo "생성된 파일: netpol-allow-same-network-${NS}.yaml"
-        oc apply -f "netpol-allow-same-network-${NS}.yaml"
+            echo "생성된 파일: netpol-allow-same-network-${NS}.yaml"
+            oc apply -f "netpol-allow-same-network-${NS}.yaml"
+        fi
         print_ok "allow-same-network 적용됨 (namespace: ${NS})"
     done
 }
@@ -235,9 +454,33 @@ EOF
 # Step 4: Allow Access From NS1 정책 (NS2에만 적용)
 # =============================================================================
 step_allow_from_ns1() {
-    print_step "4/${TOTAL_STEPS}  Allow Access From ${NS1} 정책 적용 (${NS2})"
+    local step
+    step=$(_policy_step_num 4)
+    print_step "${step}/${TOTAL_STEPS}  Allow Access From ${NS1} 정책 적용 (${NS2})"
 
-    cat > "netpol-allow-from-ns1-${NS2}.yaml" <<EOF
+    if [ "$POLICY_MODE" = "2" ]; then
+        cat > "multi-netpol-allow-from-ns1-${NS2}.yaml" <<EOF
+apiVersion: k8s.cni.cncf.io/v1beta1
+kind: MultiNetworkPolicy
+metadata:
+  name: allow-access-from-project1
+  namespace: ${NS2}
+  annotations:
+    k8s.v1.cni.cncf.io/policy-for: ${NS2}/${NAD_NAME}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ${NS1}
+EOF
+        echo "생성된 파일: multi-netpol-allow-from-ns1-${NS2}.yaml"
+        oc apply -f "multi-netpol-allow-from-ns1-${NS2}.yaml"
+    else
+        cat > "netpol-allow-from-ns1-${NS2}.yaml" <<EOF
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -253,8 +496,9 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: ${NS1}
 EOF
-    echo "생성된 파일: netpol-allow-from-ns1-${NS2}.yaml"
-    oc apply -f "netpol-allow-from-ns1-${NS2}.yaml"
+        echo "생성된 파일: netpol-allow-from-ns1-${NS2}.yaml"
+        oc apply -f "netpol-allow-from-ns1-${NS2}.yaml"
+    fi
     print_ok "allow-access-from-project1 적용됨 (namespace: ${NS2}, 허용 소스: ${NS1})"
 }
 
@@ -262,11 +506,18 @@ EOF
 # Step 5: VM 배포
 # =============================================================================
 step_vms() {
-    print_step "5/${TOTAL_STEPS}  VM 배포 (poc template)"
+    local step
+    step=$(_policy_step_num 5)
+    print_step "${step}/${TOTAL_STEPS}  VM 배포 (poc template)"
+
+    local ip_suffixes=(11 12)
+    local idx=0
 
     for NS in "$NS1" "$NS2"; do
-        local suffix
+        local suffix ip_suffix
         suffix=$(echo "$NS" | awk -F'-' '{print $NF}')
+        ip_suffix="${ip_suffixes[$idx]}"
+        idx=$((idx + 1))
         local VM_NAME="poc-vm-${suffix}"
 
         if oc get vm "$VM_NAME" -n "$NS" &>/dev/null; then
@@ -279,9 +530,44 @@ step_vms() {
             sed 's/  running: false/  runStrategy: Halted/' > "${VM_NAME}-${NS}.yaml"
         echo "생성된 파일: ${VM_NAME}-${NS}.yaml"
         oc apply -n "$NS" -f "${VM_NAME}-${NS}.yaml"
+        ensure_runstrategy "$VM_NAME" "$NS"
 
-        virtctl start "$VM_NAME" -n "$NS" 2>/dev/null || true
-        print_ok "VM $VM_NAME 배포됨 (namespace: $NS)"
+        if [ "$POLICY_MODE" = "2" ]; then
+            oc patch vm "$VM_NAME" -n "$NS" --type=json -p="[
+              {
+                \"op\": \"add\",
+                \"path\": \"/spec/template/spec/domain/devices/interfaces/-\",
+                \"value\": {\"name\": \"${SECONDARY_IFACE}\", \"bridge\": {}, \"model\": \"virtio\"}
+              },
+              {
+                \"op\": \"add\",
+                \"path\": \"/spec/template/spec/networks/-\",
+                \"value\": {\"name\": \"${SECONDARY_IFACE}\", \"multus\": {\"networkName\": \"${NAD_NAME}\"}}
+              }
+            ]"
+
+            local ci_idx
+            ci_idx=$(oc get vm "$VM_NAME" -n "$NS" \
+                -o jsonpath='{range .spec.template.spec.volumes[*]}{.name}{"\n"}{end}' 2>/dev/null | \
+                grep -n "cloudinitdisk" | cut -d: -f1 | head -1)
+            [ -n "$ci_idx" ] && ci_idx=$(( ci_idx - 1 ))
+
+            if [ -n "$ci_idx" ]; then
+                oc patch vm "$VM_NAME" -n "$NS" --type=json -p="[
+                  {\"op\": \"add\",
+                   \"path\": \"/spec/template/spec/volumes/${ci_idx}/cloudInitNoCloud/networkData\",
+                   \"value\": \"version: 2\\nethernets:\\n  eth1:\\n    dhcp4: false\\n    addresses:\\n      - ${SECONDARY_IP_PREFIX}.${ip_suffix}/24\\n    gateway4: ${SECONDARY_IP_PREFIX}.1\\n    nameservers:\\n      addresses:\\n        - 8.8.8.8\\n\"}
+                ]"
+                print_ok "networkData 추가됨 (eth1: ${SECONDARY_IP_PREFIX}.${ip_suffix}/24)"
+            else
+                print_warn "cloudinitdisk volume을 찾을 수 없습니다. networkData가 설정되지 않았습니다."
+            fi
+            virtctl start "$VM_NAME" -n "$NS" 2>/dev/null || true
+            print_ok "VM $VM_NAME 배포됨 (eth0: masquerade, eth1: ${NAD_NAME}, IP: ${SECONDARY_IP_PREFIX}.${ip_suffix}/24)"
+        else
+            virtctl start "$VM_NAME" -n "$NS" 2>/dev/null || true
+            print_ok "VM $VM_NAME 배포됨 (namespace: $NS, eth0 pod network)"
+        fi
     done
 }
 
@@ -289,7 +575,40 @@ step_vms() {
 # Step 6: ConsoleYAMLSample 등록
 # =============================================================================
 step_consoleyamlsamples() {
-    print_step "6/${TOTAL_STEPS}  ConsoleYAMLSample 등록"
+    local step
+    step=$(_policy_step_num 6)
+    print_step "${step}/${TOTAL_STEPS}  ConsoleYAMLSample 등록"
+
+    if [ "$POLICY_MODE" = "2" ]; then
+        cat > consoleyamlsample-multi-deny-all.yaml <<EOF
+apiVersion: console.openshift.io/v1
+kind: ConsoleYAMLSample
+metadata:
+  name: poc-multi-netpol-deny-all
+spec:
+  title: "POC MultiNetworkPolicy — Deny All"
+  description: "Blocks all Ingress on the secondary NIC (OVN localnet)."
+  targetResource:
+    apiVersion: k8s.cni.cncf.io/v1beta1
+    kind: MultiNetworkPolicy
+  yaml: |
+    apiVersion: k8s.cni.cncf.io/v1beta1
+    kind: MultiNetworkPolicy
+    metadata:
+      name: deny-all
+      namespace: ${NS1}
+      annotations:
+        k8s.v1.cni.cncf.io/policy-for: ${NS1}/${NAD_NAME}
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+EOF
+        echo "생성된 파일: consoleyamlsample-multi-deny-all.yaml"
+        oc apply -f consoleyamlsample-multi-deny-all.yaml
+        print_ok "ConsoleYAMLSample poc-multi-netpol-deny-all 등록됨"
+        return 0
+    fi
 
     # Deny All 샘플
     cat > consoleyamlsample-deny-all.yaml <<EOF
@@ -387,26 +706,31 @@ EOF
 print_summary() {
     echo ""
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN}  완료! NetworkPolicy 실습 환경이 준비되었습니다.${NC}"
+    if [ "$POLICY_MODE" = "2" ]; then
+        echo -e "${GREEN}  완료! MultiNetworkPolicy 실습 환경이 준비되었습니다.${NC}"
+    else
+        echo -e "${GREEN}  완료! NetworkPolicy 실습 환경이 준비되었습니다.${NC}"
+    fi
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "  적용된 NetworkPolicy:"
-    echo -e "    - deny-all                  : 모든 Ingress 차단 (${NS1}, ${NS2})"
-    echo -e "    - allow-same-network        : namespace 내부 통신 허용 (${NS1}, ${NS2})"
-    echo -e "    - allow-access-from-project1: ${NS1} → ${NS2} Ingress 허용"
-    echo ""
-    echo -e "  정책 확인:"
-    echo -e "    ${CYAN}oc get networkpolicy -n ${NS1}${NC}"
-    echo -e "    ${CYAN}oc get networkpolicy -n ${NS2}${NC}"
+    if [ "$POLICY_MODE" = "2" ]; then
+        echo -e "  적용된 MultiNetworkPolicy (NAD: ${NAD_NAME}):"
+        echo -e "    ${CYAN}oc get multinetworkpolicy -n ${NS1}${NC}"
+        echo -e "    ${CYAN}oc get multinetworkpolicy -n ${NS2}${NC}"
+        echo ""
+        echo -e "  VM secondary NIC IP 확인:"
+        echo -e "    ${CYAN}oc get vmi -n ${NS1} -o jsonpath='{.items[0].status.interfaces[?(@.name==\"${SECONDARY_IFACE}\")].ipAddress}'${NC}"
+    else
+        echo -e "  적용된 NetworkPolicy:"
+        echo -e "    ${CYAN}oc get networkpolicy -n ${NS1}${NC}"
+        echo -e "    ${CYAN}oc get networkpolicy -n ${NS2}${NC}"
+    fi
     echo ""
     echo -e "  VM 상태 확인:"
     echo -e "    ${CYAN}oc get vmi -n ${NS1}${NC}"
     echo -e "    ${CYAN}oc get vmi -n ${NS2}${NC}"
     echo ""
     echo -e "  다음 단계: 05-network-policy.md 참조"
-    echo -e "    1. VM 시작 후 VM 콘솔에서 통신 테스트 수행"
-    echo -e "    2. ${NS1} VM → ${NS2} VM: 허용됨 (allow-access-from-project1)"
-    echo -e "    3. ${NS2} VM → ${NS1} VM: 차단됨 (deny-all)"
     echo ""
 }
 
@@ -415,11 +739,14 @@ print_summary() {
 # =============================================================================
 cleanup() {
     print_step "--cleanup: 05-network-policy 리소스 삭제"
-    oc delete project poc-network-policy-1 poc-network-policy-2 --ignore-not-found 2>/dev/null || true
+    oc delete project poc-network-policy-1 poc-network-policy-2 \
+        poc-multi-network-policy-1 poc-multi-network-policy-2 \
+        --ignore-not-found 2>/dev/null || true
     oc delete consoleyamlsample \
         poc-netpol-deny-all \
         poc-netpol-allow-same-network \
         poc-netpol-allow-from-project1 \
+        poc-multi-netpol-deny-all \
         --ignore-not-found 2>/dev/null || true
     print_ok "05-network-policy 리소스 삭제됨"
 }
@@ -430,11 +757,14 @@ cleanup() {
 main() {
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${CYAN}  05-network-policy: NetworkPolicy 실습${NC}"
+    echo -e "${CYAN}  05-network-policy: NetworkPolicy / MultiNetworkPolicy 실습${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
+    choose_policy_mode
     preflight
     step_namespaces
+    step_enable_mnp
+    step_nad
     step_deny_all
     step_allow_same_network
     step_allow_from_ns1

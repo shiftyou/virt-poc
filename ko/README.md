@@ -16,10 +16,10 @@ cd ko
 | # | 디렉토리 | 설명 |
 |---|----------|------|
 | 01 | [01-template](01-template/01-template.md) | RHEL9 qcow2 → DataVolume → DataSource → Template 등록 |
-| 02 | [02-network](02-network/02-network.md) | NNCP Linux Bridge + NAD + VM 네트워크 구성 |
+| 02 | [02-network](02-network/02-network.md) | NNCP (Linux Bridge / OVS / Bond / VLAN) + NAD + VM 네트워크 구성 |
 | 03 | [03-vm-workload](03-vm-workload/03-vm-workload.md) | VM 생성, 스토리지, 네트워크, Live Migration |
 | 04 | [04-multitenancy](04-multitenancy/04-multitenancy.md) | Namespace, 사용자, RBAC, VM |
-| 05 | [05-network-policy](05-network-policy/05-network-policy.md) | NetworkPolicy — 전체 차단 / 같은 NS 허용 / IP 허용 |
+| 05 | [05-network-policy](05-network-policy/05-network-policy.md) | NetworkPolicy / MultiNetworkPolicy — eth0 또는 eth1 정책 실습 |
 | 06 | [06-resource-quota](06-resource-quota/06-resource-quota.md) | ResourceQuota — CPU, Memory, Pod, PVC 제한 |
 | 07 | [07-descheduler](07-descheduler/07-descheduler.md) | VM 자동 재스케줄링 (Descheduler) |
 | 08 | [08-liveness-probe](08-liveness-probe/08-liveness-probe.md) | VM Liveness Probe — HTTP, TCP, Exec |

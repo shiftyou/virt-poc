@@ -170,18 +170,14 @@ ensure_runstrategy() {
 choose_mode() {
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${CYAN}  Select a network configuration method${NC}"
+    echo -e "${CYAN}  Select NAD configuration mode${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "  ${GREEN}1)${NC} Linux Bridge"
-    echo -e "     NNCP → Linux Bridge → cnv-bridge CNI"
-    echo -e "     ${DIM}Switch: Access or Trunk port (no extra switch config needed)${NC}"
-    echo -e "     ${DIM}Use   : Test/dev environments, quick setup${NC}"
+    echo -e "  ${GREEN}1)${NC} Default (no VLAN)"
+    echo -e "     ${DIM}Linux Bridge / Bond → cnv-bridge  |  OVS → ovn-k8s-cni-overlay${NC}"
     echo ""
-    echo -e "  ${GREEN}2)${NC} Linux Bridge + VLAN filtering"
-    echo -e "     NNCP → Linux Bridge trunk port → cnv-bridge + VLAN ID"
-    echo -e "     ${DIM}Switch: Trunk port required + VLAN must be in the allowed list${NC}"
-    echo -e "     ${DIM}Use   : Tenant/department network isolation (multiple VLANs on one NIC)${NC}"
+    echo -e "  ${GREEN}2)${NC} VLAN filtering (VLAN ID on NAD)"
+    echo -e "     ${DIM}Linux Bridge trunk or OVN localnet + vlanID${NC}"
     echo ""
     echo -e "  ${DIM}NNCP interface type (Linux Bridge / OVS / Bond / VLAN) is chosen when creating a new NNCP.${NC}"
     echo ""
@@ -195,21 +191,21 @@ choose_mode() {
 
     case "$NET_TYPE" in
         1)
-            NAD_NAME="poc-bridge-nad"
-            print_ok "Selected: Linux Bridge"
+            print_ok "Selected: NAD default (no VLAN)"
             ;;
         2)
-            NAD_NAME="poc-bridge-vlan-nad"
             echo ""
             read -r -p "  Enter VLAN ID [default: ${VLAN_ID}]: " input_vlan
             [ -n "$input_vlan" ] && VLAN_ID="$input_vlan"
-            print_ok "Selected: Linux Bridge + VLAN ${VLAN_ID}"
+            print_ok "Selected: NAD VLAN filtering (VLAN ${VLAN_ID})"
+            save_to_env "VLAN_ID" "$VLAN_ID"
             ;;
         *)
             print_error "Please enter 1 or 2."
             exit 1
             ;;
     esac
+    save_to_env "NET_TYPE" "$NET_TYPE"
 }
 
 # =============================================================================
@@ -420,15 +416,8 @@ _apply_nncp_yaml() {
         print_error "NNCP creation failed or timed out."
         exit 1
     }
-    save_to_env "NNCP_NAME" "$NNCP_NAME"
-    save_to_env "BRIDGE_NAME" "$BRIDGE_NAME"
-    save_to_env "BRIDGE_INTERFACE" "$BRIDGE_INTERFACE"
-    save_to_env "NNCP_IFACE_TYPE" "$NNCP_IFACE_TYPE"
-    [ -n "${LOCALNET_NAME:-}" ] && save_to_env "LOCALNET_NAME" "$LOCALNET_NAME"
-    [ -n "${BOND_NAME:-}" ] && save_to_env "BOND_NAME" "$BOND_NAME"
-    [ -n "${BOND_MODE:-}" ] && save_to_env "BOND_MODE" "$BOND_MODE"
-    [ -n "${BOND_INTERFACE_2:-}" ] && save_to_env "BOND_INTERFACE_2" "$BOND_INTERFACE_2"
-    [ -n "${VLAN_ID:-}" ] && save_to_env "VLAN_ID" "$VLAN_ID"
+    resolve_nad_name
+    save_network_env
     print_ok "NNCP '${NNCP_NAME}' created (type: $(_nncp_type_label "$NNCP_IFACE_TYPE"), bridge: ${BRIDGE_NAME})"
 }
 
@@ -778,7 +767,8 @@ step_nncp() {
         fi
     fi
 
-    _set_nad_name
+    resolve_nad_name
+    save_network_env
 }
 
 # =============================================================================
@@ -1342,8 +1332,9 @@ print_summary() {
 cleanup() {
     print_step "--cleanup: Delete 02-network resources"
     oc delete vm poc-network-vm-1 poc-network-vm-2 -n poc-network --ignore-not-found 2>/dev/null || true
-    oc delete consoleyamlsample poc-bridge-nncp poc-bridge-nad poc-bridge-vlan-nad \
-        poc-localnet-nad poc-localnet-vlan-nad --ignore-not-found 2>/dev/null || true
+    oc delete consoleyamlsample "${NNCP_NAME:-poc-bridge-nncp}" \
+        poc-bridge-nad poc-bridge-vlan-nad poc-localnet-nad poc-localnet-vlan-nad \
+        --ignore-not-found 2>/dev/null || true
     oc delete project poc-network --ignore-not-found 2>/dev/null || true
     echo ""
     for _nncp in $(oc get nncp -o name 2>/dev/null | grep poc- || true); do

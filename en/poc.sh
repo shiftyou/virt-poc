@@ -486,10 +486,10 @@ done
 step_desc() {
     case "$1" in
         01-template)         echo "DataVolume upload → DataSource → Template registration" ;;
-        02-network)          echo "NNCP Linux Bridge (${BRIDGE_NAME:-br-poc}) + NAD + VM creation" ;;
+        02-network)          echo "NNCP $(nncp_type_label "${NNCP_IFACE_TYPE:-linux-bridge}") (${BRIDGE_NAME:-br-poc}) + NAD + VM creation" ;;
         03-vm-workload)      echo "VM Workload — Namespace + NAD + VM (poc template + bridge network)" ;;
         04-multitenancy)     echo "Multi-tenancy — Namespaces, Users, RBAC, VMs" ;;
-        05-network-policy)   echo "NetworkPolicy — Deny All / Allow Same NS / Allow IP" ;;
+        05-network-policy)   echo "NetworkPolicy / MultiNetworkPolicy — eth0 or eth1 policy practice" ;;
         06-resource-quota)   echo "ResourceQuota — CPU, Memory, Pod, PVC limits" ;;
         07-descheduler)      echo "Descheduler — VM automatic rescheduling (Operator required)" ;;
         08-liveness-probe)   echo "VM Liveness Probe — HTTP, TCP, Exec" ;;

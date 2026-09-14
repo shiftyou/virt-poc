@@ -16,10 +16,10 @@ cd en
 | # | Directory | Description |
 |---|-----------|-------------|
 | 01 | [01-template](01-template/01-template.md) | RHEL9 qcow2 → DataVolume → DataSource → Template |
-| 02 | [02-network](02-network/02-network.md) | NNCP Linux Bridge + NAD + VM networking |
+| 02 | [02-network](02-network/02-network.md) | NNCP (Linux Bridge / OVS / Bond / VLAN) + NAD + VM networking |
 | 03 | [03-vm-workload](03-vm-workload/03-vm-workload.md) | VM creation, storage, networking, Live Migration |
 | 04 | [04-multitenancy](04-multitenancy/04-multitenancy.md) | Namespaces, Users, RBAC, VMs |
-| 05 | [05-network-policy](05-network-policy/05-network-policy.md) | NetworkPolicy — Deny All / Allow Same NS / Allow IP |
+| 05 | [05-network-policy](05-network-policy/05-network-policy.md) | NetworkPolicy / MultiNetworkPolicy — eth0 or eth1 policy practice |
 | 06 | [06-resource-quota](06-resource-quota/06-resource-quota.md) | ResourceQuota — CPU, Memory, Pod, PVC limits |
 | 07 | [07-descheduler](07-descheduler/07-descheduler.md) | VM automatic rescheduling (Descheduler) |
 | 08 | [08-liveness-probe](08-liveness-probe/08-liveness-probe.md) | VM Liveness Probe — HTTP, TCP, Exec |

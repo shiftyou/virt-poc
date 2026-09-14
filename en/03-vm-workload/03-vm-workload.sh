@@ -20,7 +20,13 @@ fi
 
 VM_NS="poc-vm"
 NNCP_NAME="${NNCP_NAME:-poc-bridge-nncp}"
-BRIDGE_NAME="${BRIDGE_NAME}"
+BRIDGE_NAME="${BRIDGE_NAME:-br-poc}"
+BRIDGE_INTERFACE="${BRIDGE_INTERFACE:-ens4}"
+NNCP_IFACE_TYPE="${NNCP_IFACE_TYPE:-linux-bridge}"
+NET_TYPE="${NET_TYPE:-1}"
+NAD_NAME="${NAD_NAME:-}"
+LOCALNET_NAME="${LOCALNET_NAME:-poc-localnet}"
+VLAN_ID="${VLAN_ID:-100}"
 SECONDARY_IP_PREFIX="${SECONDARY_IP_PREFIX:-192.168.100}"
 
 if [ -f "${SCRIPT_DIR}/../utils/common.sh" ]; then
@@ -143,9 +149,17 @@ preflight() {
         exit 77
     fi
 
+    if [ -n "$NNCP_NAME" ] && oc get nncp "$NNCP_NAME" &>/dev/null; then
+        detect_nncp_type "$NNCP_NAME"
+    fi
+    resolve_nad_name
+    save_network_env
+
     print_ok "Configuration confirmed"
-    print_info "  VM_NS       : ${VM_NS}"
-    print_info "  BRIDGE_NAME : ${BRIDGE_NAME}"
+    print_info "  VM_NS            : ${VM_NS}"
+    print_info "  BRIDGE_NAME      : ${BRIDGE_NAME}"
+    print_info "  NNCP_IFACE_TYPE  : ${NNCP_IFACE_TYPE}"
+    print_info "  NAD_NAME         : ${NAD_NAME}"
 
     if ! oc whoami &>/dev/null; then
         print_error "Not logged into OpenShift."
@@ -249,13 +263,52 @@ ensure_runstrategy() {
 # Step 2: Register NAD
 # =============================================================================
 step_nad() {
-    print_step "2/4  NAD — Register NetworkAttachmentDefinition (${VM_NS})"
+    print_step "2/4  NAD — Register NetworkAttachmentDefinition (${NAD_NAME} → ${VM_NS})"
 
-    cat > nad-vm-bridge.yaml <<EOF
+    local nad_file="nad-${NAD_NAME}.yaml"
+    if [ "$NNCP_IFACE_TYPE" = "ovs-bridge" ]; then
+        if [ "$NET_TYPE" = "2" ]; then
+            cat > "$nad_file" <<EOF
 apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition
 metadata:
-  name: poc-bridge-nad
+  name: ${NAD_NAME}
+  namespace: ${VM_NS}
+spec:
+  config: |-
+    {
+        "cniVersion": "0.3.1",
+        "name": "${LOCALNET_NAME}",
+        "type": "ovn-k8s-cni-overlay",
+        "topology": "localnet",
+        "vlanID": ${VLAN_ID},
+        "netAttachDefName": "${VM_NS}/${NAD_NAME}"
+    }
+EOF
+        else
+            cat > "$nad_file" <<EOF
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: ${NAD_NAME}
+  namespace: ${VM_NS}
+spec:
+  config: |-
+    {
+        "cniVersion": "0.3.1",
+        "name": "${LOCALNET_NAME}",
+        "type": "ovn-k8s-cni-overlay",
+        "topology": "localnet",
+        "netAttachDefName": "${VM_NS}/${NAD_NAME}"
+    }
+EOF
+        fi
+    elif [ "$NET_TYPE" = "2" ] && [ "$NNCP_IFACE_TYPE" != "vlan" ]; then
+        cat > "$nad_file" <<EOF
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: ${NAD_NAME}
   namespace: ${VM_NS}
   annotations:
     k8s.v1.cni.cncf.io/resourceName: bridge.network.kubevirt.io/${BRIDGE_NAME}
@@ -263,7 +316,29 @@ spec:
   config: |-
     {
         "cniVersion": "0.3.1",
-        "name": "poc-bridge-nad",
+        "name": "${NAD_NAME}",
+        "type": "bridge",
+        "bridge": "${BRIDGE_NAME}",
+        "vlan": ${VLAN_ID},
+        "ipam": {},
+        "macspoofchk": true,
+        "preserveDefaultVlan": false
+    }
+EOF
+    else
+        cat > "$nad_file" <<EOF
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: ${NAD_NAME}
+  namespace: ${VM_NS}
+  annotations:
+    k8s.v1.cni.cncf.io/resourceName: bridge.network.kubevirt.io/${BRIDGE_NAME}
+spec:
+  config: |-
+    {
+        "cniVersion": "0.3.1",
+        "name": "${NAD_NAME}",
         "type": "bridge",
         "bridge": "${BRIDGE_NAME}",
         "ipam": {},
@@ -271,17 +346,17 @@ spec:
         "preserveDefaultVlan": false
     }
 EOF
-    echo "Generated file: nad-vm-bridge.yaml"
-    oc apply -f nad-vm-bridge.yaml
-
-    print_ok "NAD poc-bridge-nad registered (namespace: ${VM_NS})"
+    fi
+    echo "Generated file: ${nad_file}"
+    oc apply -f "$nad_file"
+    print_ok "NAD ${NAD_NAME} registered (namespace: ${VM_NS})"
 }
 
 # =============================================================================
 # Step 3: Create VM (poc template + poc-bridge-nad)
 # =============================================================================
 step_vm() {
-    print_step "3/4  Create VM (poc template + poc-bridge-nad)"
+    print_step "3/4  Create VM (poc template + ${NAD_NAME})"
 
     if ! oc get template poc -n openshift &>/dev/null; then
         print_warn "poc Template not found — skipping VM creation. (Run 01-template first)"
@@ -304,19 +379,19 @@ step_vm() {
 
     ensure_runstrategy "$VM_NAME" "$VM_NS"
 
-    # Add secondary NIC (poc-bridge-nad)
-    oc patch vm "$VM_NAME" -n "$VM_NS" --type=json -p='[
+    # Add secondary NIC
+    oc patch vm "$VM_NAME" -n "$VM_NS" --type=json -p="[
       {
-        "op": "add",
-        "path": "/spec/template/spec/domain/devices/interfaces/-",
-        "value": {"name": "bridge-net", "bridge": {}, "model": "virtio"}
+        \"op\": \"add\",
+        \"path\": \"/spec/template/spec/domain/devices/interfaces/-\",
+        \"value\": {\"name\": \"bridge-net\", \"bridge\": {}, \"model\": \"virtio\"}
       },
       {
-        "op": "add",
-        "path": "/spec/template/spec/networks/-",
-        "value": {"name": "bridge-net", "multus": {"networkName": "poc-bridge-nad"}}
+        \"op\": \"add\",
+        \"path\": \"/spec/template/spec/networks/-\",
+        \"value\": {\"name\": \"bridge-net\", \"multus\": {\"networkName\": \"${NAD_NAME}\"}}
       }
-    ]'
+    ]"
 
     # cloud-init networkData — eth1 static IP (03 → .31/24)
     local ci_idx
@@ -337,7 +412,7 @@ step_vm() {
     fi
 
     virtctl start "$VM_NAME" -n "$VM_NS" 2>/dev/null || true
-    print_ok "VM ${VM_NAME} created (eth0: masquerade, eth1: poc-bridge-nad, IP: ${SECONDARY_IP_PREFIX}.31/24)"
+    print_ok "VM ${VM_NAME} created (eth0: masquerade, eth1: ${NAD_NAME}, IP: ${SECONDARY_IP_PREFIX}.31/24)"
 }
 
 # =============================================================================
@@ -353,7 +428,7 @@ metadata:
   name: poc-virtualmachine
 spec:
   title: "Create POC VirtualMachine (Bridge network + cloud-init static IP)"
-  description: "Connect a Linux Bridge NAD (${BRIDGE_NAME}) as a secondary network to a poc template-based VM, and configure a static IP on eth1 via cloud-init. Apply after registering poc Template and NAD."
+  description: "Connect NAD ${NAD_NAME} (${NNCP_IFACE_TYPE}) as a secondary network to a poc template-based VM, and configure a static IP on eth1 via cloud-init."
   targetResource:
     apiVersion: kubevirt.io/v1
     kind: VirtualMachine
@@ -394,7 +469,7 @@ spec:
               pod: {}
             - name: bridge-net
               multus:
-                networkName: poc-bridge-nad
+                networkName: ${NAD_NAME}
           volumes:
             - dataVolume:
                 name: poc-vm

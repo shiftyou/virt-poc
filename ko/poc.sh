@@ -499,10 +499,10 @@ done
 step_desc() {
     case "$1" in
         01-template)         echo "DataVolume 업로드 → DataSource → Template 등록" ;;
-        02-network)          echo "NNCP Linux Bridge (${BRIDGE_NAME:-br-poc}) + NAD + VM 생성" ;;
+        02-network)          echo "NNCP $(nncp_type_label "${NNCP_IFACE_TYPE:-linux-bridge}") (${BRIDGE_NAME:-br-poc}) + NAD + VM 생성" ;;
         03-vm-workload)      echo "VM Workload — Namespace + NAD + VM (poc template + bridge 네트워크)" ;;
         04-multitenancy)     echo "멀티테넌시 — Namespace, 사용자, RBAC, VM" ;;
-        05-network-policy)   echo "NetworkPolicy — 전체 거부 / 동일 NS 허용 / IP 허용" ;;
+        05-network-policy)   echo "NetworkPolicy / MultiNetworkPolicy — eth0 또는 eth1 정책 실습" ;;
         06-resource-quota)   echo "ResourceQuota — CPU, Memory, Pod, PVC 제한" ;;
         07-descheduler)      echo "Descheduler — VM 자동 재스케줄링 (Operator 필요)" ;;
         08-liveness-probe)   echo "VM Liveness Probe — HTTP, TCP, Exec" ;;

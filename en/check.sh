@@ -16,6 +16,7 @@ ENV_FILE="${SCRIPT_DIR}/env.conf"
 if [ -f "$ENV_FILE" ]; then
     set -a; source "$ENV_FILE"; set +a
 fi
+[ -f "${SCRIPT_DIR}/utils/common.sh" ] && source "${SCRIPT_DIR}/utils/common.sh"
 
 VERBOSE="${1:-}"
 
@@ -144,6 +145,10 @@ check_network() {
     if [ "$nncp_count" -gt 0 ]; then
         test_pass "NNCP found: $nncp_count configuration(s)"
         [ "$VERBOSE" = "--verbose" ] && oc get nncp
+        if [ -n "${NNCP_NAME:-}" ] && oc get nncp "$NNCP_NAME" &>/dev/null; then
+            detect_nncp_type "$NNCP_NAME"
+            test_pass "env.conf NNCP: ${NNCP_NAME} (type: $(nncp_type_label "$NNCP_IFACE_TYPE"))"
+        fi
     else
         test_warn "No NNCP found (run 02-network/02-network.sh)"
     fi
@@ -154,6 +159,16 @@ check_network() {
     if [ "$nad_count" -gt 0 ]; then
         test_pass "NAD found: $nad_count network(s)"
         [ "$VERBOSE" = "--verbose" ] && oc get network-attachment-definitions -A
+        resolve_nad_name
+        if [ -n "${NAD_NAME:-}" ]; then
+            local nad_found
+            nad_found=$(oc get network-attachment-definitions -A 2>/dev/null | grep -c "${NAD_NAME}" || true)
+            if [ "$nad_found" -gt 0 ]; then
+                test_pass "Expected NAD '${NAD_NAME}' found"
+            else
+                test_warn "Expected NAD '${NAD_NAME}' not found"
+            fi
+        fi
     else
         test_warn "No NAD found"
     fi
@@ -226,13 +241,24 @@ check_network_policy() {
     print_section "Lab 05: Network Policy"
 
     test_start "NetworkPolicies"
-    local np_count
+    local np_count mnp_count
     np_count=$(oc get networkpolicy -n poc-network-policy-1 -n poc-network-policy-2 2>/dev/null | grep -v NAME | wc -l)
     if [ "$np_count" -gt 0 ]; then
         test_pass "NetworkPolicies: $np_count found (poc-network-policy-*)"
         [ "$VERBOSE" = "--verbose" ] && oc get networkpolicy -n poc-network-policy-1 -n poc-network-policy-2
     else
-        test_warn "No NetworkPolicies found (run 05-network-policy)"
+        test_warn "No NetworkPolicies found (05-network-policy method 1)"
+    fi
+
+    test_start "MultiNetworkPolicies"
+    mnp_count=$(oc get multinetworkpolicy -n poc-multi-network-policy-1 \
+        -n poc-multi-network-policy-2 2>/dev/null | grep -v NAME | wc -l)
+    if [ "$mnp_count" -gt 0 ]; then
+        test_pass "MultiNetworkPolicies: $mnp_count found (poc-multi-network-policy-*)"
+        [ "$VERBOSE" = "--verbose" ] && oc get multinetworkpolicy \
+            -n poc-multi-network-policy-1 -n poc-multi-network-policy-2
+    else
+        test_warn "No MultiNetworkPolicies found (05-network-policy method 2)"
     fi
 }
 

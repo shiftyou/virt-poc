@@ -170,18 +170,14 @@ ensure_runstrategy() {
 choose_mode() {
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${CYAN}  네트워크 구성 방식 선택${NC}"
+    echo -e "${CYAN}  NAD 구성 방식 선택${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "  ${GREEN}1)${NC} Linux Bridge"
-    echo -e "     NNCP → Linux Bridge → cnv-bridge CNI"
-    echo -e "     ${DIM}스위치: Access 또는 Trunk port (별도 스위치 설정 불필요)${NC}"
-    echo -e "     ${DIM}용도  : 테스트/개발 환경, 빠른 설정${NC}"
+    echo -e "  ${GREEN}1)${NC} 기본 (VLAN 없음)"
+    echo -e "     ${DIM}Linux Bridge / Bond → cnv-bridge  |  OVS → ovn-k8s-cni-overlay${NC}"
     echo ""
-    echo -e "  ${GREEN}2)${NC} Linux Bridge + VLAN filtering"
-    echo -e "     NNCP → Linux Bridge trunk port → cnv-bridge + VLAN ID"
-    echo -e "     ${DIM}스위치: Trunk port 필요 + VLAN이 허용 목록에 포함되어야 함${NC}"
-    echo -e "     ${DIM}용도  : 테넌트/부서별 네트워크 격리 (하나의 NIC에 여러 VLAN)${NC}"
+    echo -e "  ${GREEN}2)${NC} VLAN filtering (NAD에 VLAN ID 지정)"
+    echo -e "     ${DIM}Linux Bridge trunk 또는 OVN localnet + vlanID${NC}"
     echo ""
     echo -e "  ${DIM}NNCP 인터페이스 유형(Linux Bridge / OVS / Bond / VLAN)은 새 NNCP를 만들 때 선택합니다.${NC}"
     echo ""
@@ -195,21 +191,21 @@ choose_mode() {
 
     case "$NET_TYPE" in
         1)
-            NAD_NAME="poc-bridge-nad"
-            print_ok "선택됨: Linux Bridge"
+            print_ok "선택됨: NAD 기본 (VLAN 없음)"
             ;;
         2)
-            NAD_NAME="poc-bridge-vlan-nad"
             echo ""
             read -r -p "  VLAN ID 입력 [기본값: ${VLAN_ID}]: " input_vlan
             [ -n "$input_vlan" ] && VLAN_ID="$input_vlan"
-            print_ok "선택됨: Linux Bridge + VLAN ${VLAN_ID}"
+            print_ok "선택됨: NAD VLAN filtering (VLAN ${VLAN_ID})"
+            save_to_env "VLAN_ID" "$VLAN_ID"
             ;;
         *)
             print_error "1 또는 2를 입력해 주세요."
             exit 1
             ;;
     esac
+    save_to_env "NET_TYPE" "$NET_TYPE"
 }
 
 # =============================================================================
@@ -420,15 +416,8 @@ _apply_nncp_yaml() {
         print_error "NNCP 생성 실패 또는 시간 초과."
         exit 1
     }
-    save_to_env "NNCP_NAME" "$NNCP_NAME"
-    save_to_env "BRIDGE_NAME" "$BRIDGE_NAME"
-    save_to_env "BRIDGE_INTERFACE" "$BRIDGE_INTERFACE"
-    save_to_env "NNCP_IFACE_TYPE" "$NNCP_IFACE_TYPE"
-    [ -n "${LOCALNET_NAME:-}" ] && save_to_env "LOCALNET_NAME" "$LOCALNET_NAME"
-    [ -n "${BOND_NAME:-}" ] && save_to_env "BOND_NAME" "$BOND_NAME"
-    [ -n "${BOND_MODE:-}" ] && save_to_env "BOND_MODE" "$BOND_MODE"
-    [ -n "${BOND_INTERFACE_2:-}" ] && save_to_env "BOND_INTERFACE_2" "$BOND_INTERFACE_2"
-    [ -n "${VLAN_ID:-}" ] && save_to_env "VLAN_ID" "$VLAN_ID"
+    resolve_nad_name
+    save_network_env
     print_ok "NNCP '${NNCP_NAME}' 생성 완료 (유형: $(_nncp_type_label "$NNCP_IFACE_TYPE"), bridge: ${BRIDGE_NAME})"
 }
 
@@ -778,7 +767,8 @@ step_nncp() {
         fi
     fi
 
-    _set_nad_name
+    resolve_nad_name
+    save_network_env
 }
 
 # =============================================================================
@@ -1342,8 +1332,9 @@ print_summary() {
 cleanup() {
     print_step "--cleanup: 02-network 리소스 삭제"
     oc delete vm poc-network-vm-1 poc-network-vm-2 -n poc-network --ignore-not-found 2>/dev/null || true
-    oc delete consoleyamlsample poc-bridge-nncp poc-bridge-nad poc-bridge-vlan-nad \
-        poc-localnet-nad poc-localnet-vlan-nad --ignore-not-found 2>/dev/null || true
+    oc delete consoleyamlsample "${NNCP_NAME:-poc-bridge-nncp}" \
+        poc-bridge-nad poc-bridge-vlan-nad poc-localnet-nad poc-localnet-vlan-nad \
+        --ignore-not-found 2>/dev/null || true
     oc delete project poc-network --ignore-not-found 2>/dev/null || true
     echo ""
     for _nncp in $(oc get nncp -o name 2>/dev/null | grep poc- || true); do
