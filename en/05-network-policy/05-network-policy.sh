@@ -29,7 +29,8 @@ NET_TYPE="${NET_TYPE:-1}"
 NAD_NAME="${NAD_NAME:-}"
 LOCALNET_NAME="${LOCALNET_NAME:-poc-localnet}"
 VLAN_ID="${VLAN_ID:-100}"
-SECONDARY_IP_PREFIX="${SECONDARY_IP_PREFIX:-192.168.100}"
+SECONDARY_IP_PREFIX="${SECONDARY_IP_PREFIX:-192.168.200}"
+SECONDARY_IP_START="${SECONDARY_IP_START:-60}"
 NS1="poc-network-policy-1"
 NS2="poc-network-policy-2"
 TOTAL_STEPS=6
@@ -508,7 +509,7 @@ step_vms() {
     step=$(_policy_step_num 5)
     print_step "${step}/${TOTAL_STEPS}  Deploy VMs (poc template)"
 
-    local ip_suffixes=(11 12)
+    local ip_suffixes=($(( SECONDARY_IP_START + 4 )) $(( SECONDARY_IP_START + 5 )))
     local idx=0
 
     for NS in "$NS1" "$NS2"; do

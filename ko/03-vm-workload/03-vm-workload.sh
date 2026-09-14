@@ -27,7 +27,8 @@ NET_TYPE="${NET_TYPE:-1}"
 NAD_NAME="${NAD_NAME:-}"
 LOCALNET_NAME="${LOCALNET_NAME:-poc-localnet}"
 VLAN_ID="${VLAN_ID:-100}"
-SECONDARY_IP_PREFIX="${SECONDARY_IP_PREFIX:-192.168.100}"
+SECONDARY_IP_PREFIX="${SECONDARY_IP_PREFIX:-192.168.200}"
+SECONDARY_IP_START="${SECONDARY_IP_START:-60}"
 
 if [ -f "${SCRIPT_DIR}/../utils/common.sh" ]; then
     source "${SCRIPT_DIR}/../utils/common.sh"
@@ -404,15 +405,15 @@ step_vm() {
         oc patch vm "$VM_NAME" -n "$VM_NS" --type=json -p="[
           {\"op\": \"add\",
            \"path\": \"/spec/template/spec/volumes/${ci_idx}/cloudInitNoCloud/networkData\",
-           \"value\": \"version: 2\\nethernets:\\n  eth1:\\n    dhcp4: false\\n    addresses:\\n      - ${SECONDARY_IP_PREFIX}.31/24\\n    gateway4: ${SECONDARY_IP_PREFIX}.1\\n    nameservers:\\n      addresses:\\n        - 8.8.8.8\\n\"}
+           \"value\": \"version: 2\\nethernets:\\n  eth1:\\n    dhcp4: false\\n    addresses:\\n      - ${SECONDARY_IP_PREFIX}.$(( SECONDARY_IP_START + 2 ))/24\\n    gateway4: ${SECONDARY_IP_PREFIX}.1\\n    nameservers:\\n      addresses:\\n        - 8.8.8.8\\n\"}
         ]"
-        print_ok "networkData 추가됨 (eth1: ${SECONDARY_IP_PREFIX}.31/24)"
+        print_ok "networkData 추가됨 (eth1: ${SECONDARY_IP_PREFIX}.$(( SECONDARY_IP_START + 2 ))/24)"
     else
         print_warn "cloudinitdisk volume을 찾을 수 없습니다. networkData가 설정되지 않았습니다."
     fi
 
     virtctl start "$VM_NAME" -n "$VM_NS" 2>/dev/null || true
-    print_ok "VM ${VM_NAME} 생성됨 (eth0: masquerade, eth1: ${NAD_NAME}, IP: ${SECONDARY_IP_PREFIX}.31/24)"
+    print_ok "VM ${VM_NAME} 생성됨 (eth0: masquerade, eth1: ${NAD_NAME}, IP: ${SECONDARY_IP_PREFIX}.$(( SECONDARY_IP_START + 2 ))/24)"
 }
 
 # =============================================================================
@@ -487,7 +488,7 @@ spec:
                     eth1:
                       dhcp4: false
                       addresses:
-                        - ${SECONDARY_IP_PREFIX}.10/24
+                        - ${SECONDARY_IP_PREFIX}.$(( SECONDARY_IP_START + 3 ))/24
                       gateway4: ${SECONDARY_IP_PREFIX}.1
                       nameservers:
                         addresses:

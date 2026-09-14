@@ -396,8 +396,10 @@ print_info "  NNCP_IFACE_TYPE   : ${NNCP_IFACE_TYPE}"
 
 echo ""
 print_info "SECONDARY_IP_PREFIX: The network prefix used for static IP assignment to secondary NIC (eth1) via cloud-init."
-print_info "  e.g.) 192.168.100 → 02-network VM: .21, .22 / 03-vm: .31 / 05-network-policy: .51, .52"
-ask "Secondary NIC IP prefix (cloud-init networkData)" "192.168.100" SECONDARY_IP_PREFIX
+print_info "SECONDARY_IP_START: Starting last octet. IPs are assigned sequentially per lab."
+print_info "  e.g.) prefix=192.168.200, start=60 → 02-network: .60,.61 / 03-vm: .62,.63 / 05-netpol: .64,.65"
+ask "Secondary NIC IP prefix (first 3 octets)" "192.168.200" SECONDARY_IP_PREFIX
+ask "Secondary NIC IP start (last octet)" "60" SECONDARY_IP_START
 
 # =============================================================================
 # Save env.conf
@@ -425,6 +427,7 @@ BOND_NAME=${BOND_NAME}
 BOND_MODE=${BOND_MODE}
 BOND_INTERFACE_2=${BOND_INTERFACE_2}
 SECONDARY_IP_PREFIX=${SECONDARY_IP_PREFIX}
+SECONDARY_IP_START=${SECONDARY_IP_START}
 
 # StorageClass
 STORAGE_CLASS=${STORAGE_CLASS}

@@ -32,7 +32,8 @@ BRIDGE_NAME="${BRIDGE_NAME:-br1}"
 NNCP_NAME="${NNCP_NAME:-${BRIDGE_NAME}-nncp}"
 NAD_NAMESPACE="poc-network"
 VLAN_ID="${VLAN_ID:-100}"
-SECONDARY_IP_PREFIX="${SECONDARY_IP_PREFIX:-192.168.100}"
+SECONDARY_IP_PREFIX="${SECONDARY_IP_PREFIX:-192.168.200}"
+SECONDARY_IP_START="${SECONDARY_IP_START:-60}"
 
 # 방식별로 설정되는 변수
 NET_TYPE=""
@@ -955,7 +956,7 @@ step_vm() {
         return
     fi
 
-    local ip_suffixes=(21 22)
+    local ip_suffixes=($(( SECONDARY_IP_START )) $(( SECONDARY_IP_START + 1 )))
     local idx=0
 
     for suffix in 1 2; do
@@ -1321,8 +1322,8 @@ print_summary() {
     echo -e "  VM 상태   : ${CYAN}oc get vm,vmi -n ${NAD_NAMESPACE}${NC}"
     echo ""
     echo -e "  VM IP (eth1):"
-    echo -e "    poc-network-vm-1 : ${CYAN}${SECONDARY_IP_PREFIX}.21/24${NC}"
-    echo -e "    poc-network-vm-2 : ${CYAN}${SECONDARY_IP_PREFIX}.22/24${NC}"
+    echo -e "    poc-network-vm-1 : ${CYAN}${SECONDARY_IP_PREFIX}.$(( SECONDARY_IP_START ))/24${NC}"
+    echo -e "    poc-network-vm-2 : ${CYAN}${SECONDARY_IP_PREFIX}.$(( SECONDARY_IP_START + 1 ))/24${NC}"
     echo ""
 }
 
