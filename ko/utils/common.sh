@@ -257,3 +257,106 @@ auto_detect_odf() {
         print_warn "ODF MCG 인증 정보 감지 실패 (noobaa-admin secret 없음)"
     fi
 }
+
+# ---------------------------------------------------------------------------
+# detect_nncp_type() — NNCP에서 인터페이스 유형·bridge 정보 추출
+#   detect_nncp_type <nncp-name>
+#   설정: NNCP_IFACE_TYPE, BRIDGE_NAME, BRIDGE_INTERFACE, LOCALNET_NAME, BOND_NAME
+# ---------------------------------------------------------------------------
+detect_nncp_type() {
+    local name="$1"
+    local types
+    # state가 "up"인 인터페이스만 대상 (absent 제외)
+    types=$(oc get nncp "$name" \
+        -o jsonpath='{range .spec.desiredState.interfaces[?(@.state=="up")]}{.type}{"\n"}{end}' \
+        2>/dev/null || true)
+
+    if echo "$types" | grep -qx "ovs-bridge"; then
+        NNCP_IFACE_TYPE="ovs-bridge"
+        BRIDGE_NAME=$(oc get nncp "$name" \
+            -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="ovs-bridge")]}{.name}{end}' \
+            2>/dev/null || true)
+        BRIDGE_INTERFACE=$(oc get nncp "$name" \
+            -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="ovs-bridge")]}{.bridge.port[0].name}{end}' \
+            2>/dev/null || true)
+        local _ln
+        _ln=$(oc get nncp "$name" \
+            -o jsonpath='{.spec.desiredState.ovn.bridge-mappings[0].localnet}' \
+            2>/dev/null || true)
+        [ -n "$_ln" ] && LOCALNET_NAME="$_ln"
+    elif echo "$types" | grep -qx "linux-bridge"; then
+        BRIDGE_NAME=$(oc get nncp "$name" \
+            -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="linux-bridge")]}{.name}{end}' \
+            2>/dev/null || true)
+        BRIDGE_INTERFACE=$(oc get nncp "$name" \
+            -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="linux-bridge")]}{.bridge.port[0].name}{end}' \
+            2>/dev/null || true)
+        if echo "$types" | grep -qx "bond"; then
+            NNCP_IFACE_TYPE="bond"
+            BOND_NAME=$(oc get nncp "$name" \
+                -o jsonpath='{range .spec.desiredState.interfaces[?(@.type=="bond")]}{.name}{end}' \
+                2>/dev/null || true)
+        elif echo "$types" | grep -qx "vlan"; then
+            NNCP_IFACE_TYPE="vlan"
+        else
+            NNCP_IFACE_TYPE="linux-bridge"
+        fi
+    else
+        NNCP_IFACE_TYPE="linux-bridge"
+        BRIDGE_NAME=$(oc get nncp "$name" \
+            -o jsonpath='{.spec.desiredState.interfaces[0].name}' 2>/dev/null || true)
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# nncp_type_label() — NNCP 유형 표시 문자열
+# ---------------------------------------------------------------------------
+nncp_type_label() {
+    case "${1:-linux-bridge}" in
+        ovs-bridge) echo "ovs-bridge" ;;
+        bond)       echo "bond+bridge" ;;
+        vlan)       echo "vlan+bridge" ;;
+        *)          echo "linux-bridge" ;;
+    esac
+}
+
+# ---------------------------------------------------------------------------
+# resolve_nad_name() — NNCP 유형·NAD VLAN 모드에 맞는 NAD 이름 결정
+#   NET_TYPE: 1=기본, 2=VLAN filtering (NAD)
+#   설정: NAD_NAME
+# ---------------------------------------------------------------------------
+resolve_nad_name() {
+    NNCP_IFACE_TYPE="${NNCP_IFACE_TYPE:-linux-bridge}"
+    NET_TYPE="${NET_TYPE:-1}"
+    if [ "$NNCP_IFACE_TYPE" = "ovs-bridge" ]; then
+        if [ "$NET_TYPE" = "2" ]; then
+            NAD_NAME="poc-localnet-vlan-nad"
+        else
+            NAD_NAME="poc-localnet-nad"
+        fi
+    else
+        if [ "$NET_TYPE" = "2" ]; then
+            NAD_NAME="poc-bridge-vlan-nad"
+        else
+            NAD_NAME="poc-bridge-nad"
+        fi
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# save_network_env() — env.conf에 네트워크 관련 변수 저장
+# ---------------------------------------------------------------------------
+save_network_env() {
+    [ -n "${NNCP_NAME:-}" ] && save_to_env "NNCP_NAME" "$NNCP_NAME"
+    [ -n "${BRIDGE_NAME:-}" ] && save_to_env "BRIDGE_NAME" "$BRIDGE_NAME"
+    [ -n "${BRIDGE_INTERFACE:-}" ] && save_to_env "BRIDGE_INTERFACE" "$BRIDGE_INTERFACE"
+    [ -n "${NNCP_IFACE_TYPE:-}" ] && save_to_env "NNCP_IFACE_TYPE" "$NNCP_IFACE_TYPE"
+    [ -n "${NAD_NAME:-}" ] && save_to_env "NAD_NAME" "$NAD_NAME"
+    [ -n "${NET_TYPE:-}" ] && save_to_env "NET_TYPE" "$NET_TYPE"
+    [ -n "${LOCALNET_NAME:-}" ] && save_to_env "LOCALNET_NAME" "$LOCALNET_NAME"
+    [ -n "${BOND_NAME:-}" ] && save_to_env "BOND_NAME" "$BOND_NAME"
+    [ -n "${BOND_MODE:-}" ] && save_to_env "BOND_MODE" "$BOND_MODE"
+    [ -n "${BOND_INTERFACE_2:-}" ] && save_to_env "BOND_INTERFACE_2" "$BOND_INTERFACE_2"
+    [ -n "${VLAN_ID:-}" ] && save_to_env "VLAN_ID" "$VLAN_ID"
+    [ -n "${SECONDARY_IP_PREFIX:-}" ] && save_to_env "SECONDARY_IP_PREFIX" "$SECONDARY_IP_PREFIX"
+}
