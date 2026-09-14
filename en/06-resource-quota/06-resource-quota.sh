@@ -22,11 +22,17 @@ fi
 
 NS="poc-resource-quota"
 
-# VM resources: 750m / 1500m each → 2 VMs=1500m (pass), 3 VMs=2250m (exceed)
+# Default VM/Quota resources (overridden by detect_node_resources at runtime)
+VM_CPU_REQUEST_M=750
+VM_MEM_REQUEST_MI=1024
 VM_CPU_REQUEST="750m"
 VM_CPU_LIMIT="1500m"
 VM_MEM_REQUEST="1Gi"
 VM_MEM_LIMIT="2Gi"
+QUOTA_CPU_REQUEST="2"
+QUOTA_CPU_LIMIT="4"
+QUOTA_MEM_REQUEST="4Gi"
+QUOTA_MEM_LIMIT="8Gi"
 
 if [ -f "${SCRIPT_DIR}/../utils/common.sh" ]; then
     source "${SCRIPT_DIR}/../utils/common.sh"
@@ -152,6 +158,80 @@ ensure_runstrategy() {
 }
 
 # =============================================================================
+# Detect node resources and calculate VM/Quota values
+# =============================================================================
+detect_node_resources() {
+    print_step "Detect worker node resources"
+
+    local raw_cpu raw_mem node_cpu_m node_mem_mi
+
+    raw_cpu=$(oc get nodes -l node-role.kubernetes.io/worker \
+        -o jsonpath='{.items[0].status.allocatable.cpu}' 2>/dev/null || true)
+    raw_mem=$(oc get nodes -l node-role.kubernetes.io/worker \
+        -o jsonpath='{.items[0].status.allocatable.memory}' 2>/dev/null || true)
+
+    if [ -z "$raw_cpu" ] || [ -z "$raw_mem" ]; then
+        print_warn "Could not detect node resources — using defaults"
+        return 1
+    fi
+
+    if [[ "$raw_cpu" =~ ^([0-9]+)m$ ]]; then
+        node_cpu_m="${BASH_REMATCH[1]}"
+    elif [[ "$raw_cpu" =~ ^[0-9]+$ ]]; then
+        node_cpu_m=$(( raw_cpu * 1000 ))
+    else
+        print_warn "Unexpected CPU format: ${raw_cpu} — using defaults"
+        return 1
+    fi
+
+    if [[ "$raw_mem" =~ ^([0-9]+)Ki$ ]]; then
+        node_mem_mi=$(( ${BASH_REMATCH[1]} / 1024 ))
+    elif [[ "$raw_mem" =~ ^([0-9]+)Mi$ ]]; then
+        node_mem_mi="${BASH_REMATCH[1]}"
+    elif [[ "$raw_mem" =~ ^([0-9]+)Gi$ ]]; then
+        node_mem_mi=$(( ${BASH_REMATCH[1]} * 1024 ))
+    else
+        print_warn "Unexpected memory format: ${raw_mem} — using defaults"
+        return 1
+    fi
+
+    # VM request ≈ 1/8 of node allocatable, rounded to 250m / 256Mi
+    VM_CPU_REQUEST_M=$(( (node_cpu_m / 8 / 250) * 250 ))
+    (( VM_CPU_REQUEST_M < 250 )) && VM_CPU_REQUEST_M=250
+    local vm_cpu_limit_m=$(( VM_CPU_REQUEST_M * 2 ))
+
+    VM_MEM_REQUEST_MI=$(( (node_mem_mi / 8 / 256) * 256 ))
+    (( VM_MEM_REQUEST_MI < 256 )) && VM_MEM_REQUEST_MI=256
+    local vm_mem_limit_mi=$(( VM_MEM_REQUEST_MI * 2 ))
+
+    # Quota = 2.5× VM request → 2 VMs pass, 3rd exceeds
+    local quota_cpu_req_m=$(( VM_CPU_REQUEST_M * 5 / 2 ))
+    local quota_cpu_lim_m=$(( quota_cpu_req_m * 2 ))
+    local quota_mem_req_mi=$(( VM_MEM_REQUEST_MI * 5 / 2 ))
+    local quota_mem_lim_mi=$(( quota_mem_req_mi * 2 ))
+
+    VM_CPU_REQUEST="${VM_CPU_REQUEST_M}m"
+    VM_CPU_LIMIT="${vm_cpu_limit_m}m"
+    VM_MEM_REQUEST="${VM_MEM_REQUEST_MI}Mi"
+    VM_MEM_LIMIT="${vm_mem_limit_mi}Mi"
+    QUOTA_CPU_REQUEST="${quota_cpu_req_m}m"
+    QUOTA_CPU_LIMIT="${quota_cpu_lim_m}m"
+    QUOTA_MEM_REQUEST="${quota_mem_req_mi}Mi"
+    QUOTA_MEM_LIMIT="${quota_mem_lim_mi}Mi"
+
+    (( VM_MEM_REQUEST_MI % 1024 == 0 )) && VM_MEM_REQUEST="$(( VM_MEM_REQUEST_MI / 1024 ))Gi"
+    (( vm_mem_limit_mi % 1024 == 0 )) && VM_MEM_LIMIT="$(( vm_mem_limit_mi / 1024 ))Gi"
+    (( quota_mem_req_mi % 1024 == 0 )) && QUOTA_MEM_REQUEST="$(( quota_mem_req_mi / 1024 ))Gi"
+    (( quota_mem_lim_mi % 1024 == 0 )) && QUOTA_MEM_LIMIT="$(( quota_mem_lim_mi / 1024 ))Gi"
+
+    print_ok  "Node allocatable: ${node_cpu_m}m CPU, ${node_mem_mi}Mi memory"
+    print_info "  VM request : ${VM_CPU_REQUEST} cpu / ${VM_MEM_REQUEST} mem"
+    print_info "  VM limit   : ${VM_CPU_LIMIT} cpu / ${VM_MEM_LIMIT} mem"
+    print_info "  Quota req  : ${QUOTA_CPU_REQUEST} cpu / ${QUOTA_MEM_REQUEST} mem (2 VMs pass, 3rd exceeds)"
+    print_info "  Quota lim  : ${QUOTA_CPU_LIMIT} cpu / ${QUOTA_MEM_LIMIT} mem"
+}
+
+# =============================================================================
 # Pre-flight checks
 # =============================================================================
 preflight() {
@@ -194,36 +274,29 @@ step_namespace() {
 }
 
 # =============================================================================
-# Step 2: Apply ResourceQuota
-#   requests.cpu: "2" → 2 VMs (each 750m=1500m) pass, 3rd (2250m) exceeds
+# Step 2: Apply ResourceQuota (values from detect_node_resources)
 # =============================================================================
 step_quota() {
     print_step "2/4  Apply ResourceQuota (${NS})"
 
-    cat > resourcequota-poc.yaml <<'EOF'
+    cat > resourcequota-poc.yaml <<EOF
 apiVersion: v1
 kind: ResourceQuota
 metadata:
   name: poc-quota
-  namespace: poc-resource-quota
+  namespace: ${NS}
 spec:
   hard:
-    # Pod count
     pods: "10"
-    # CPU — requests.cpu: "2" → 2 VMs at 750m each (1500m) pass, 3 VMs (2250m) exceed
-    requests.cpu: "2"
-    limits.cpu: "4"
-    # Memory
-    requests.memory: 4Gi
-    limits.memory: 8Gi
-    # PersistentVolumeClaim count and capacity
+    requests.cpu: "${QUOTA_CPU_REQUEST}"
+    limits.cpu: "${QUOTA_CPU_LIMIT}"
+    requests.memory: ${QUOTA_MEM_REQUEST}
+    limits.memory: ${QUOTA_MEM_LIMIT}
     persistentvolumeclaims: "10"
     requests.storage: 100Gi
-    # Service
     services: "10"
     services.loadbalancers: "2"
     services.nodeports: "0"
-    # ConfigMap / Secret
     configmaps: "20"
     secrets: "20"
 EOF
@@ -231,7 +304,7 @@ EOF
     oc apply -f resourcequota-poc.yaml
 
     print_ok "ResourceQuota poc-quota applied"
-    print_info "  requests.cpu limit: 2 core (2 VMs×750m=1500m pass, 3 VMs=2250m exceed)"
+    print_info "  requests.cpu: ${QUOTA_CPU_REQUEST} (2 VMs × ${VM_CPU_REQUEST} = $(( VM_CPU_REQUEST_M * 2 ))m pass, 3 VMs = $(( VM_CPU_REQUEST_M * 3 ))m exceed)"
 }
 
 # =============================================================================
@@ -391,10 +464,14 @@ print_summary() {
     echo -e "  Check Quota exceeded events:"
     echo -e "    ${CYAN}oc get events -n ${NS} --field-selector reason=FailedCreate${NC}"
     echo ""
+    echo -e "  Quota (auto-detected from node):"
+    echo -e "    requests.cpu: ${QUOTA_CPU_REQUEST}  limits.cpu: ${QUOTA_CPU_LIMIT}"
+    echo -e "    requests.memory: ${QUOTA_MEM_REQUEST}  limits.memory: ${QUOTA_MEM_LIMIT}"
+    echo ""
     echo -e "  Expected results:"
     echo -e "    poc-quota-vm-1  → Running  (cpu request: ${VM_CPU_REQUEST})"
     echo -e "    poc-quota-vm-2  → Running  (cpu request: ${VM_CPU_REQUEST})"
-    echo -e "    poc-quota-vm-3  → Pending  (virt-launcher Pod rejected due to Quota exceeded)"
+    echo -e "    poc-quota-vm-3  → Pending  ($(( VM_CPU_REQUEST_M * 3 ))m > ${QUOTA_CPU_REQUEST} — virt-launcher Pod rejected)"
     echo ""
     echo -e "  For details: refer to 06-resource-quota/06-resource-quota.md"
     echo ""
@@ -420,6 +497,7 @@ main() {
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
     preflight
+    detect_node_resources || true
     step_namespace
     step_quota
     step_consoleyamlsamples

@@ -22,11 +22,17 @@ fi
 
 NS="poc-resource-quota"
 
-# VM 리소스: 750m / 1500m 각각 → 2개 VM=1500m (통과), 3개 VM=2250m (초과)
+# 기본 VM/Quota 리소스 (런타임에 detect_node_resources로 재설정됨)
+VM_CPU_REQUEST_M=750
+VM_MEM_REQUEST_MI=1024
 VM_CPU_REQUEST="750m"
 VM_CPU_LIMIT="1500m"
 VM_MEM_REQUEST="1Gi"
 VM_MEM_LIMIT="2Gi"
+QUOTA_CPU_REQUEST="2"
+QUOTA_CPU_LIMIT="4"
+QUOTA_MEM_REQUEST="4Gi"
+QUOTA_MEM_LIMIT="8Gi"
 
 if [ -f "${SCRIPT_DIR}/../utils/common.sh" ]; then
     source "${SCRIPT_DIR}/../utils/common.sh"
@@ -152,6 +158,80 @@ ensure_runstrategy() {
 }
 
 # =============================================================================
+# 워커 노드 리소스 감지 및 VM/Quota 값 계산
+# =============================================================================
+detect_node_resources() {
+    print_step "워커 노드 리소스 감지"
+
+    local raw_cpu raw_mem node_cpu_m node_mem_mi
+
+    raw_cpu=$(oc get nodes -l node-role.kubernetes.io/worker \
+        -o jsonpath='{.items[0].status.allocatable.cpu}' 2>/dev/null || true)
+    raw_mem=$(oc get nodes -l node-role.kubernetes.io/worker \
+        -o jsonpath='{.items[0].status.allocatable.memory}' 2>/dev/null || true)
+
+    if [ -z "$raw_cpu" ] || [ -z "$raw_mem" ]; then
+        print_warn "노드 리소스를 감지할 수 없습니다 — 기본값 사용"
+        return 1
+    fi
+
+    if [[ "$raw_cpu" =~ ^([0-9]+)m$ ]]; then
+        node_cpu_m="${BASH_REMATCH[1]}"
+    elif [[ "$raw_cpu" =~ ^[0-9]+$ ]]; then
+        node_cpu_m=$(( raw_cpu * 1000 ))
+    else
+        print_warn "예상치 못한 CPU 형식: ${raw_cpu} — 기본값 사용"
+        return 1
+    fi
+
+    if [[ "$raw_mem" =~ ^([0-9]+)Ki$ ]]; then
+        node_mem_mi=$(( ${BASH_REMATCH[1]} / 1024 ))
+    elif [[ "$raw_mem" =~ ^([0-9]+)Mi$ ]]; then
+        node_mem_mi="${BASH_REMATCH[1]}"
+    elif [[ "$raw_mem" =~ ^([0-9]+)Gi$ ]]; then
+        node_mem_mi=$(( ${BASH_REMATCH[1]} * 1024 ))
+    else
+        print_warn "예상치 못한 메모리 형식: ${raw_mem} — 기본값 사용"
+        return 1
+    fi
+
+    # VM request ≈ 노드 allocatable의 1/8, 250m / 256Mi 단위로 반올림
+    VM_CPU_REQUEST_M=$(( (node_cpu_m / 8 / 250) * 250 ))
+    (( VM_CPU_REQUEST_M < 250 )) && VM_CPU_REQUEST_M=250
+    local vm_cpu_limit_m=$(( VM_CPU_REQUEST_M * 2 ))
+
+    VM_MEM_REQUEST_MI=$(( (node_mem_mi / 8 / 256) * 256 ))
+    (( VM_MEM_REQUEST_MI < 256 )) && VM_MEM_REQUEST_MI=256
+    local vm_mem_limit_mi=$(( VM_MEM_REQUEST_MI * 2 ))
+
+    # Quota = VM request의 2.5배 → 2개 VM 통과, 3번째 초과
+    local quota_cpu_req_m=$(( VM_CPU_REQUEST_M * 5 / 2 ))
+    local quota_cpu_lim_m=$(( quota_cpu_req_m * 2 ))
+    local quota_mem_req_mi=$(( VM_MEM_REQUEST_MI * 5 / 2 ))
+    local quota_mem_lim_mi=$(( quota_mem_req_mi * 2 ))
+
+    VM_CPU_REQUEST="${VM_CPU_REQUEST_M}m"
+    VM_CPU_LIMIT="${vm_cpu_limit_m}m"
+    VM_MEM_REQUEST="${VM_MEM_REQUEST_MI}Mi"
+    VM_MEM_LIMIT="${vm_mem_limit_mi}Mi"
+    QUOTA_CPU_REQUEST="${quota_cpu_req_m}m"
+    QUOTA_CPU_LIMIT="${quota_cpu_lim_m}m"
+    QUOTA_MEM_REQUEST="${quota_mem_req_mi}Mi"
+    QUOTA_MEM_LIMIT="${quota_mem_lim_mi}Mi"
+
+    (( VM_MEM_REQUEST_MI % 1024 == 0 )) && VM_MEM_REQUEST="$(( VM_MEM_REQUEST_MI / 1024 ))Gi"
+    (( vm_mem_limit_mi % 1024 == 0 )) && VM_MEM_LIMIT="$(( vm_mem_limit_mi / 1024 ))Gi"
+    (( quota_mem_req_mi % 1024 == 0 )) && QUOTA_MEM_REQUEST="$(( quota_mem_req_mi / 1024 ))Gi"
+    (( quota_mem_lim_mi % 1024 == 0 )) && QUOTA_MEM_LIMIT="$(( quota_mem_lim_mi / 1024 ))Gi"
+
+    print_ok  "노드 allocatable: ${node_cpu_m}m CPU, ${node_mem_mi}Mi 메모리"
+    print_info "  VM request : ${VM_CPU_REQUEST} cpu / ${VM_MEM_REQUEST} mem"
+    print_info "  VM limit   : ${VM_CPU_LIMIT} cpu / ${VM_MEM_LIMIT} mem"
+    print_info "  Quota req  : ${QUOTA_CPU_REQUEST} cpu / ${QUOTA_MEM_REQUEST} mem (2개 통과, 3번째 초과)"
+    print_info "  Quota lim  : ${QUOTA_CPU_LIMIT} cpu / ${QUOTA_MEM_LIMIT} mem"
+}
+
+# =============================================================================
 # 사전 점검
 # =============================================================================
 preflight() {
@@ -194,36 +274,29 @@ step_namespace() {
 }
 
 # =============================================================================
-# Step 2: ResourceQuota 적용
-#   requests.cpu: "2" → 2개 VM (각 750m=1500m) 통과, 3번째 (2250m) 초과
+# Step 2: ResourceQuota 적용 (detect_node_resources에서 계산된 값 사용)
 # =============================================================================
 step_quota() {
     print_step "2/4  ResourceQuota 적용 (${NS})"
 
-    cat > resourcequota-poc.yaml <<'EOF'
+    cat > resourcequota-poc.yaml <<EOF
 apiVersion: v1
 kind: ResourceQuota
 metadata:
   name: poc-quota
-  namespace: poc-resource-quota
+  namespace: ${NS}
 spec:
   hard:
-    # Pod 수
     pods: "10"
-    # CPU — requests.cpu: "2" → 2개 VM 각 750m (1500m) 통과, 3개 VM (2250m) 초과
-    requests.cpu: "2"
-    limits.cpu: "4"
-    # Memory
-    requests.memory: 4Gi
-    limits.memory: 8Gi
-    # PersistentVolumeClaim 수 및 용량
+    requests.cpu: "${QUOTA_CPU_REQUEST}"
+    limits.cpu: "${QUOTA_CPU_LIMIT}"
+    requests.memory: ${QUOTA_MEM_REQUEST}
+    limits.memory: ${QUOTA_MEM_LIMIT}
     persistentvolumeclaims: "10"
     requests.storage: 100Gi
-    # Service
     services: "10"
     services.loadbalancers: "2"
     services.nodeports: "0"
-    # ConfigMap / Secret
     configmaps: "20"
     secrets: "20"
 EOF
@@ -231,7 +304,7 @@ EOF
     oc apply -f resourcequota-poc.yaml
 
     print_ok "ResourceQuota poc-quota 적용됨"
-    print_info "  requests.cpu 제한: 2 core (2개 VM x 750m=1500m 통과, 3개 VM=2250m 초과)"
+    print_info "  requests.cpu: ${QUOTA_CPU_REQUEST} (2개 VM × ${VM_CPU_REQUEST} = $(( VM_CPU_REQUEST_M * 2 ))m 통과, 3개 VM = $(( VM_CPU_REQUEST_M * 3 ))m 초과)"
 }
 
 # =============================================================================
@@ -391,10 +464,14 @@ print_summary() {
     echo -e "  Quota 초과 이벤트 확인:"
     echo -e "    ${CYAN}oc get events -n ${NS} --field-selector reason=FailedCreate${NC}"
     echo ""
+    echo -e "  Quota (노드에서 자동 감지):"
+    echo -e "    requests.cpu: ${QUOTA_CPU_REQUEST}  limits.cpu: ${QUOTA_CPU_LIMIT}"
+    echo -e "    requests.memory: ${QUOTA_MEM_REQUEST}  limits.memory: ${QUOTA_MEM_LIMIT}"
+    echo ""
     echo -e "  예상 결과:"
     echo -e "    poc-quota-vm-1  → Running  (cpu request: ${VM_CPU_REQUEST})"
     echo -e "    poc-quota-vm-2  → Running  (cpu request: ${VM_CPU_REQUEST})"
-    echo -e "    poc-quota-vm-3  → Pending  (Quota 초과로 virt-launcher Pod 거부됨)"
+    echo -e "    poc-quota-vm-3  → Pending  ($(( VM_CPU_REQUEST_M * 3 ))m > ${QUOTA_CPU_REQUEST} — Quota 초과로 virt-launcher Pod 거부됨)"
     echo ""
     echo -e "  자세한 내용: 06-resource-quota/06-resource-quota.md 참조"
     echo ""
@@ -420,6 +497,7 @@ main() {
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
     preflight
+    detect_node_resources || true
     step_namespace
     step_quota
     step_consoleyamlsamples
