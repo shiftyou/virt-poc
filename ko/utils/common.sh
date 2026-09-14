@@ -274,7 +274,6 @@ detect_nncp_type() {
     if [ -n "$_raw" ]; then
         types=$(echo "$_raw" | awk -F'\t' '$1 != "absent" {print $2}') || true
     fi
-    echo "  [debug] detect_nncp_type($name) types: $(echo $types | tr '\n' ' ')" >&2
 
     if echo "$types" | grep -qx "ovs-bridge"; then
         NNCP_IFACE_TYPE="ovs-bridge"
@@ -312,7 +311,6 @@ detect_nncp_type() {
             -o jsonpath='{.spec.desiredState.interfaces[0].name}' 2>/dev/null) || true
     fi
 
-    echo "  [debug] result: type=${NNCP_IFACE_TYPE} bridge=${BRIDGE_NAME:-N/A} nic=${BRIDGE_INTERFACE:-N/A}" >&2
     eval "$_prev_opts"
 }
 
