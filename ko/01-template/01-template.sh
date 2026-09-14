@@ -316,6 +316,14 @@ EOF
         fi
         dv_phase=$(oc get dv "$DV_NAME" -n "$TARGET_NS" \
             -o jsonpath='{.status.phase}' 2>/dev/null || true)
+        if [ "$dv_phase" = "Failed" ]; then
+            local dv_msg
+            dv_msg=$(oc get dv "$DV_NAME" -n "$TARGET_NS" \
+                -o jsonpath='{.status.conditions[?(@.type=="Running")].message}' 2>/dev/null || true)
+            print_error "DataVolume $DV_NAME 실패: ${dv_msg:-알 수 없는 오류}"
+            print_error "Golden Image URL을 확인하거나 로컬 qcow2 파일을 제공하세요."
+            exit 1
+        fi
         progress=$(oc get dv "$DV_NAME" -n "$TARGET_NS" \
             -o jsonpath='{.status.progress}' 2>/dev/null || true)
         print_info "PVC: ${pvc_phase:-Unknown}, DV: ${dv_phase:-Unknown}${progress:+, 진행률: $progress} — 30초 후 재확인..."
