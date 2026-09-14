@@ -340,11 +340,13 @@ if command -v oc &>/dev/null && oc whoami &>/dev/null 2>&1; then
             if [[ "$_sel_input" =~ ^[0-9]+$ ]] && [ "$_sel_input" -ge 1 ] && [ "$_sel_input" -lt "$_idx" ]; then
                 NNCP_NAME="${_NNCP_NAMES[$((_sel_input-1))]}"
                 detect_nncp_type "$NNCP_NAME"
+                select_localnet
                 _USE_EXISTING_NNCP=true
                 print_ok "선택됨: ${NNCP_NAME} (유형: $(nncp_type_label "$NNCP_IFACE_TYPE"), bridge: ${BRIDGE_NAME})"
             else
                 NNCP_NAME="$_sel_input"
                 detect_nncp_type "$NNCP_NAME"
+                select_localnet
                 _USE_EXISTING_NNCP=true
                 print_ok "선택됨: ${NNCP_NAME}"
             fi
