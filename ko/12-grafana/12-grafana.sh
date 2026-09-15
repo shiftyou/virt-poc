@@ -242,7 +242,7 @@ preflight() {
             print_info "Grafana Operator는 설치되어 있지만 Grafana 인스턴스를 찾지 못했습니다 — 3/4 단계에서 새로 생성(namespace ${GRAFANA_DEFAULT_NS})한 뒤 대시보드를 배포합니다."
         fi
     else
-        print_warn "Grafana Operator가 설치되어 있지 않습니다 — 3/4 단계(Operator 기반 대시보드)는 생략됩니다."
+        print_error "Grafana Operator가 설치되어 있지 않습니다 — 3/4 단계는 건너뜁니다."
         print_info "  설치 방법은 operators/grafana-operator.md를 참고하세요."
     fi
 
@@ -1039,7 +1039,7 @@ step_operator_dashboards() {
     print_step "3/4  동일한 대시보드를 Grafana Operator 방식으로 배포 (선택 사항)"
 
     if [ "${GRAFANA_INSTALLED:-false}" != "true" ]; then
-        print_warn "Grafana Operator가 설치되어 있지 않습니다 — 생략합니다."
+        print_error "Grafana Operator가 설치되어 있지 않습니다 — 건너뜁니다."
         print_info "  설치 방법은 operators/grafana-operator.md를 참고하세요."
         return
     fi

@@ -241,7 +241,7 @@ preflight() {
             print_info "Grafana Operator installed but no Grafana instance found — step 3/4 will create one (namespace ${GRAFANA_DEFAULT_NS}) and deploy dashboards into it."
         fi
     else
-        print_warn "Grafana Operator not installed — steps 3/4–4/5 (operator-based dashboards) will be skipped."
+        print_error "Grafana Operator not installed — step 3/4 will be skipped."
         print_info "  See operators/grafana-operator.md for installation."
     fi
 
@@ -1035,10 +1035,11 @@ DASHBOARD_EOF
 }
 
 step_operator_dashboards() {
+step_operator_dashboards() {
     print_step "3/4  Deploy the same dashboards via Grafana Operator (optional)"
 
     if [ "${GRAFANA_INSTALLED:-false}" != "true" ]; then
-        print_warn "Grafana Operator not installed — skipping."
+        print_error "Grafana Operator not installed — skipping."
         print_info "  See operators/grafana-operator.md for installation."
         return
     fi
