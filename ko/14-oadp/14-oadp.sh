@@ -131,6 +131,7 @@ else
             print_info "Garage accessKey: ${GARAGE_ACCESS_KEY}"
         else print_warn "Garage Service (app=garage) 감지 실패 → Garage 설정을 건너뜁니다."; fi
     }
+    auto_detect_operators() { :; }
     auto_detect_odf() {
         ODF_S3_ENDPOINT=""; ODF_S3_BUCKET="velero"; ODF_S3_REGION="localstorage"
         ODF_S3_ACCESS_KEY=""; ODF_S3_SECRET_KEY=""
@@ -379,6 +380,7 @@ EOF
 
 preflight() {
     print_step "사전 점검"
+    auto_detect_operators
 
     if ! oc whoami &>/dev/null; then
         print_error "OpenShift에 로그인되어 있지 않습니다."

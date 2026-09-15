@@ -2806,8 +2806,24 @@ print_summary() {
     echo ""
 
     if [ -n "${GRAFANA_NS:-}" ]; then
+        local grafana_route
+        grafana_route=$(oc get route -n "$GRAFANA_NS" -l app=poc-grafana \
+            -o jsonpath='{.items[0].spec.host}' 2>/dev/null || true)
+        if [ -z "$grafana_route" ]; then
+            grafana_route=$(oc get route poc-grafana-route -n "$GRAFANA_NS" \
+                -o jsonpath='{.spec.host}' 2>/dev/null || true)
+        fi
+
         echo -e "  Grafana Operator 대시보드도 namespace ${GRAFANA_NS}에 배포되었습니다:"
         echo -e "    ${CYAN}oc get grafanadashboard,grafanadatasource -n ${GRAFANA_NS}${NC}"
+        if [ -n "$grafana_route" ]; then
+            echo ""
+            echo -e "  Grafana URL:"
+            echo -e "    ${BLUE}https://${grafana_route}${NC}"
+            echo -e "    - ${CYAN}https://${grafana_route}/d/poc-vm-overview-operator${NC}"
+            echo -e "    - ${CYAN}https://${grafana_route}/d/poc-ocpv-overview-operator${NC}"
+            echo -e "    계정: admin / ${GRAFANA_ADMIN_PASSWORD}"
+        fi
         echo ""
     fi
 

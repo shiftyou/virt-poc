@@ -109,6 +109,7 @@ else
             print_info "Garage accessKey: ${GARAGE_ACCESS_KEY}"
         else print_warn "Garage Service (app=garage) not detected — skipping Garage config."; fi
     }
+    auto_detect_operators() { :; }
     auto_detect_odf() {
         ODF_S3_ENDPOINT=""; ODF_S3_BUCKET="velero"; ODF_S3_REGION="localstorage"
         ODF_S3_ACCESS_KEY=""; ODF_S3_SECRET_KEY=""
@@ -131,6 +132,7 @@ fi
 
 preflight() {
     print_step "Pre-flight Check"
+    auto_detect_operators
 
     if ! oc whoami &>/dev/null; then
         print_error "Not logged in to OpenShift."

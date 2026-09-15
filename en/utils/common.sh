@@ -152,6 +152,40 @@ confirm_and_apply() {
 }
 
 # ---------------------------------------------------------------------------
+# auto_detect_operators() — auto-detect operator installation from cluster CSVs
+#   Even if env.conf has a flag set to false, if the operator is actually
+#   installed on the cluster, the flag will be updated to true.
+# ---------------------------------------------------------------------------
+auto_detect_operators() {
+    local _csv_list
+    _csv_list=$(oc get csv --all-namespaces --no-headers 2>/dev/null || true)
+    [ -z "$_csv_list" ] && return 0
+
+    if [ "${VIRT_INSTALLED:-false}" != "true" ]; then
+        echo "$_csv_list" | grep -qi "kubevirt-hyperconverged" && VIRT_INSTALLED=true
+    fi
+    if [ "${MTV_INSTALLED:-false}" != "true" ]; then
+        echo "$_csv_list" | grep -qi "mtv-operator" && MTV_INSTALLED=true
+    fi
+    if [ "${OADP_INSTALLED:-false}" != "true" ]; then
+        echo "$_csv_list" | grep -qi "oadp-operator" && OADP_INSTALLED=true
+    fi
+    if [ "${GRAFANA_INSTALLED:-false}" != "true" ]; then
+        echo "$_csv_list" | grep -qi "grafana-operator" && GRAFANA_INSTALLED=true
+    fi
+    if [ "${COO_INSTALLED:-false}" != "true" ]; then
+        echo "$_csv_list" | grep -qi "cluster-observability-operator" && COO_INSTALLED=true
+    fi
+    if [ "${NMO_INSTALLED:-false}" != "true" ]; then
+        echo "$_csv_list" | grep -qi "node-maintenance" && NMO_INSTALLED=true
+    fi
+    if [ "${DESCHEDULER_INSTALLED:-false}" != "true" ]; then
+        echo "$_csv_list" | grep -qi "kube-descheduler" && DESCHEDULER_INSTALLED=true
+    fi
+    return 0
+}
+
+# ---------------------------------------------------------------------------
 # detect_worker_nodes() — detect worker nodes from the cluster
 #   Sets: WORKER_NODES (space-separated), TEST_NODE (first worker)
 # ---------------------------------------------------------------------------
