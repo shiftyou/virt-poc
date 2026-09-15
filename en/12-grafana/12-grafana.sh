@@ -1035,7 +1035,6 @@ DASHBOARD_EOF
 }
 
 step_operator_dashboards() {
-step_operator_dashboards() {
     print_step "3/4  Deploy the same dashboards via Grafana Operator (optional)"
 
     if [ "${GRAFANA_INSTALLED:-false}" != "true" ]; then
@@ -2275,11 +2274,148 @@ DASHBOARD_EOF
     oc apply -f ./poc-ocpv-overview-operator-dashboard.yaml
     print_ok "GrafanaDashboard poc-ocpv-overview-operator deployed"
 
+    cat > ./poc-vm-statusmap-operator.json << 'DASHBOARD_EOF'
+{
+  "annotations": {"list": [{"builtIn": 1, "datasource": {"type": "grafana", "uid": "-- Grafana --"}, "enable": true, "hide": true, "iconColor": "rgba(0,211,255,1)", "name": "Annotations & Alerts", "type": "dashboard"}]},
+  "description": "KubeVirt VM Status Map — Node-level VM hexagon layout (Grafana Operator + Polystat)",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["kubevirt", "vm", "poc", "openshift-virtualization", "grafana-operator", "statusmap"],
+  "templating": {
+    "list": [
+      {"current": {"selected": false, "text": "Thanos-Querier", "value": "Thanos-Querier"}, "hide": 0, "includeAll": false, "label": "Datasource", "multi": false, "name": "datasource", "options": [], "query": "prometheus", "refresh": 1, "type": "datasource"},
+      {"allValue": ".*", "current": {"selected": true, "text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "${datasource}"}, "definition": "label_values(kubevirt_vmi_info, node)", "hide": 0, "includeAll": true, "label": "Node", "multi": true, "name": "node", "options": [], "query": {"query": "label_values(kubevirt_vmi_info, node)", "refId": "Q"}, "refresh": 2, "regex": "", "sort": 1, "type": "query"}
+    ]
+  },
+  "time": {"from": "now-5m", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "KubeVirt VM Status Map (Operator)",
+  "uid": "poc-vm-statusmap-operator",
+  "version": 1,
+  "panels": [
+    {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}, "id": 100, "title": "VM Status Summary", "type": "row"},
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"fixedColor": "green", "mode": "fixed"}, "mappings": [], "unit": "none"}, "overrides": []},
+      "gridPos": {"h": 3, "w": 6, "x": 0, "y": 1},
+      "id": 1,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "title": "Running",
+      "type": "stat",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(kubevirt_vmi_phase_count{phase=~\"Running|running\"}) or vector(0)", "legendFormat": "", "refId": "A"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"fixedColor": "yellow", "mode": "fixed"}, "mappings": [], "unit": "none"}, "overrides": []},
+      "gridPos": {"h": 3, "w": 6, "x": 6, "y": 1},
+      "id": 2,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "title": "Paused",
+      "type": "stat",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(kubevirt_vmi_phase_count{phase=~\"Paused|paused\"}) or vector(0)", "legendFormat": "", "refId": "A"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"fixedColor": "red", "mode": "fixed"}, "mappings": [], "unit": "none"}, "overrides": []},
+      "gridPos": {"h": 3, "w": 6, "x": 12, "y": 1},
+      "id": 3,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "title": "Abnormal",
+      "type": "stat",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "sum(kubevirt_vmi_phase_count{phase!~\"Running|running|Paused|paused\"}) or vector(0)", "legendFormat": "", "refId": "A"}]
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {"defaults": {"color": {"fixedColor": "blue", "mode": "fixed"}, "mappings": [], "unit": "none"}, "overrides": []},
+      "gridPos": {"h": 3, "w": 6, "x": 18, "y": 1},
+      "id": 4,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "title": "Total VMI",
+      "type": "stat",
+      "targets": [{"datasource": {"type": "prometheus", "uid": "${datasource}"}, "expr": "count(kubevirt_vmi_info) or vector(0)", "legendFormat": "", "refId": "A"}]
+    },
+    {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 4}, "id": 101, "title": "VM Status Map by Node", "type": "row"},
+    {
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "#C9190B", "value": null},
+              {"color": "#37872D", "value": 1}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 12, "w": 12, "x": 0, "y": 5},
+      "id": 10,
+      "maxPerRow": 2,
+      "options": {
+        "autoSizeColumns": true, "autoSizeRows": true, "autoSizePolygons": true,
+        "ellipseCharacters": 18, "ellipseEnabled": true,
+        "globalAutoScaleFonts": true, "globalDecimals": 0, "globalDisplayMode": "all",
+        "globalDisplayTextTriggeredEmpty": "", "globalFillColor": "#37872D",
+        "globalFontSize": 12, "globalGradientsEnabled": false, "globalOperatorName": "last",
+        "globalPolygonBorderColor": "#1a1a1a", "globalPolygonBorderSize": 2, "globalPolygonSize": 50,
+        "globalRegexPattern": "", "globalShape": "hexagon_pointed_top",
+        "globalShowTimestampEnabled": false, "globalShowTooltipColumnHeadersEnabled": true,
+        "globalShowValueEnabled": false, "globalTextFontAutoColor": "#FFFFFF",
+        "globalTextFontAutoColorEnabled": true, "globalTextFontColor": "#FFFFFF",
+        "globalTextFontFamily": "Roboto", "globalTooltipDisplayMode": "all",
+        "globalTooltipDisplayTextTriggeredEmpty": "", "globalTooltipFontFamily": "Roboto",
+        "globalTooltipFontSize": 12, "layoutDisplayLimit": 100,
+        "layoutNumColumns": 0, "layoutNumRows": 0,
+        "sortByDirection": 1, "sortByField": "name"
+      },
+      "repeat": "node",
+      "repeatDirection": "h",
+      "title": "$node",
+      "type": "grafana-polystat-panel",
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "expr": "count by (name, namespace) (kubevirt_vmi_info{node=~\"$node\"})",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
+DASHBOARD_EOF
+
+    {
+        printf 'apiVersion: grafana.integreatly.org/v1beta1\n'
+        printf 'kind: GrafanaDashboard\n'
+        printf 'metadata:\n'
+        printf '  name: poc-vm-statusmap-operator\n'
+        printf '  namespace: %s\n' "${GRAFANA_NS}"
+        printf 'spec:\n'
+        printf '  resyncPeriod: 5m\n'
+        printf '  instanceSelector:\n'
+        printf '    matchLabels:\n'
+        printf '      dashboards: poc-grafana\n'
+        printf '  json: |\n'
+        sed 's/^/    /' ./poc-vm-statusmap-operator.json
+    } > ./poc-vm-statusmap-operator-dashboard.yaml
+
+    oc apply -f ./poc-vm-statusmap-operator-dashboard.yaml
+    print_ok "GrafanaDashboard poc-vm-statusmap-operator deployed (honeycomb VM status map)"
+
     local grafana_route
     grafana_route=$(oc get route poc-grafana-route -n "$GRAFANA_NS" -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
     if [ -n "$grafana_route" ]; then
         print_info "  Dashboard: https://${grafana_route}/d/poc-vm-overview-operator"
         print_info "  Dashboard: https://${grafana_route}/d/poc-ocpv-overview-operator"
+        print_info "  Dashboard: https://${grafana_route}/d/poc-vm-statusmap-operator  (honeycomb)"
     fi
 }
 
@@ -2822,6 +2958,7 @@ print_summary() {
             echo -e "    ${BLUE}https://${grafana_route}${NC}"
             echo -e "    - ${CYAN}https://${grafana_route}/d/poc-vm-overview-operator${NC}"
             echo -e "    - ${CYAN}https://${grafana_route}/d/poc-ocpv-overview-operator${NC}"
+            echo -e "    - ${CYAN}https://${grafana_route}/d/poc-vm-statusmap-operator${NC}  (honeycomb)"
             echo -e "    Credentials: admin / ${GRAFANA_ADMIN_PASSWORD}"
         fi
         echo ""
@@ -2848,7 +2985,7 @@ cleanup() {
 
     detect_grafana_instance
     if [ -n "${GRAFANA_NS:-}" ]; then
-        oc delete grafanadashboard poc-vm-overview-operator poc-ocpv-overview-operator -n "$GRAFANA_NS" --ignore-not-found 2>/dev/null || true
+        oc delete grafanadashboard poc-vm-overview-operator poc-ocpv-overview-operator poc-vm-statusmap-operator -n "$GRAFANA_NS" --ignore-not-found 2>/dev/null || true
         oc delete grafanadatasource thanos-querier-datasource -n "$GRAFANA_NS" --ignore-not-found 2>/dev/null || true
         oc delete serviceaccount poc-grafana-view -n "$GRAFANA_NS" --ignore-not-found 2>/dev/null || true
     fi
