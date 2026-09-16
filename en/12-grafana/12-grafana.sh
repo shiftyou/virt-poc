@@ -3076,6 +3076,12 @@ cleanup() {
         oc delete grafanadashboard poc-vm-overview-operator poc-ocpv-overview-operator poc-vm-statusmap-operator -n "$GRAFANA_NS" --ignore-not-found 2>/dev/null || true
         oc delete grafanadatasource thanos-querier-datasource -n "$GRAFANA_NS" --ignore-not-found 2>/dev/null || true
         oc delete serviceaccount poc-grafana-view -n "$GRAFANA_NS" --ignore-not-found 2>/dev/null || true
+        oc delete grafana poc-grafana -n "$GRAFANA_NS" --ignore-not-found 2>/dev/null || true
+        print_info "Grafana instance deleted (namespace: ${GRAFANA_NS})"
+        if [ "$GRAFANA_NS" = "$GRAFANA_DEFAULT_NS" ]; then
+            oc delete namespace "$GRAFANA_DEFAULT_NS" --ignore-not-found 2>/dev/null || true
+            print_info "Namespace ${GRAFANA_DEFAULT_NS} deleted"
+        fi
     fi
     oc delete clusterrolebinding grafana-cluster-monitoring-view --ignore-not-found 2>/dev/null || true
 
