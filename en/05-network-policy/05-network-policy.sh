@@ -269,7 +269,9 @@ step_namespaces() {
         if oc get namespace "$NS" &>/dev/null; then
             print_ok "Namespace $NS already exists — skipping"
         else
+            print_info "Creating namespace ${NS}..."
             oc new-project "$NS" > /dev/null
+            oc get namespace "$NS" &>/dev/null
             print_ok "Namespace $NS created"
         fi
         oc label namespace "$NS" kubernetes.io/metadata.name="$NS" --overwrite > /dev/null
@@ -337,7 +339,9 @@ spec:
     }
 EOF
         echo "Generated file: ${nad_file}"
+        print_info "Creating NAD ${NAD_NAME} (namespace: ${NS})..."
         oc apply -f "$nad_file"
+        oc get network-attachment-definition "$NAD_NAME" -n "$NS" &>/dev/null
         print_ok "NAD ${NAD_NAME} registered (namespace: ${NS})"
     done
 }
@@ -373,7 +377,9 @@ spec:
     - Ingress
 EOF
             echo "Generated file: multi-netpol-deny-all-${NS}.yaml"
+            print_info "Creating MultiNetworkPolicy deny-all (namespace: ${NS})..."
             oc apply -f "multi-netpol-deny-all-${NS}.yaml"
+            oc get multi-networkpolicy deny-all -n "$NS" &>/dev/null
         else
             cat > "netpol-deny-all-${NS}.yaml" <<EOF
 apiVersion: networking.k8s.io/v1
@@ -387,7 +393,9 @@ spec:
     - Ingress
 EOF
             echo "Generated file: netpol-deny-all-${NS}.yaml"
+            print_info "Creating NetworkPolicy deny-all (namespace: ${NS})..."
             oc apply -f "netpol-deny-all-${NS}.yaml"
+            oc get networkpolicy deny-all -n "$NS" &>/dev/null
         fi
         print_ok "deny-all applied (namespace: ${NS})"
     done
@@ -420,7 +428,9 @@ spec:
         - podSelector: {}
 EOF
             echo "Generated file: multi-netpol-allow-same-network-${NS}.yaml"
+            print_info "Creating MultiNetworkPolicy allow-same-network (namespace: ${NS})..."
             oc apply -f "multi-netpol-allow-same-network-${NS}.yaml"
+            oc get multi-networkpolicy allow-same-network -n "$NS" &>/dev/null
         else
             cat > "netpol-allow-same-network-${NS}.yaml" <<EOF
 apiVersion: networking.k8s.io/v1
@@ -437,7 +447,9 @@ spec:
         - podSelector: {}
 EOF
             echo "Generated file: netpol-allow-same-network-${NS}.yaml"
+            print_info "Creating NetworkPolicy allow-same-network (namespace: ${NS})..."
             oc apply -f "netpol-allow-same-network-${NS}.yaml"
+            oc get networkpolicy allow-same-network -n "$NS" &>/dev/null
         fi
         print_ok "allow-same-network applied (namespace: ${NS})"
     done
@@ -471,7 +483,9 @@ spec:
               kubernetes.io/metadata.name: ${NS1}
 EOF
         echo "Generated file: multi-netpol-allow-from-ns1-${NS2}.yaml"
+        print_info "Creating MultiNetworkPolicy allow-access-from-project1 (namespace: ${NS2})..."
         oc apply -f "multi-netpol-allow-from-ns1-${NS2}.yaml"
+        oc get multi-networkpolicy allow-access-from-project1 -n "$NS2" &>/dev/null
     else
         cat > "netpol-allow-from-ns1-${NS2}.yaml" <<EOF
 apiVersion: networking.k8s.io/v1
@@ -490,7 +504,9 @@ spec:
               kubernetes.io/metadata.name: ${NS1}
 EOF
         echo "Generated file: netpol-allow-from-ns1-${NS2}.yaml"
+        print_info "Creating NetworkPolicy allow-access-from-project1 (namespace: ${NS2})..."
         oc apply -f "netpol-allow-from-ns1-${NS2}.yaml"
+        oc get networkpolicy allow-access-from-project1 -n "$NS2" &>/dev/null
     fi
     print_ok "allow-access-from-project1 applied (namespace: ${NS2}, source: ${NS1})"
 }
@@ -522,7 +538,9 @@ step_vms() {
             sed 's/runStrategy: Always/runStrategy: Halted/' | \
             sed 's/  running: false/  runStrategy: Halted/' > "${VM_NAME}-${NS}.yaml"
         echo "Generated file: ${VM_NAME}-${NS}.yaml"
+        print_info "Creating VM ${VM_NAME} (namespace: ${NS})..."
         oc apply -n "$NS" -f "${VM_NAME}-${NS}.yaml"
+        oc get vm "$VM_NAME" -n "$NS" &>/dev/null
         ensure_runstrategy "$VM_NAME" "$NS"
 
         if [ "$POLICY_MODE" = "2" ]; then
@@ -598,7 +616,9 @@ spec:
         - Ingress
 EOF
         echo "Generated file: consoleyamlsample-multi-deny-all.yaml"
+        print_info "Creating ConsoleYAMLSample poc-multi-netpol-deny-all..."
         oc apply -f consoleyamlsample-multi-deny-all.yaml
+        oc get consoleyamlsample poc-multi-netpol-deny-all &>/dev/null
         print_ok "ConsoleYAMLSample poc-multi-netpol-deny-all registered"
         return 0
     fi
@@ -627,7 +647,9 @@ spec:
         - Ingress
 EOF
     echo "Generated file: consoleyamlsample-deny-all.yaml"
+    print_info "Creating ConsoleYAMLSample poc-netpol-deny-all..."
     oc apply -f consoleyamlsample-deny-all.yaml
+    oc get consoleyamlsample poc-netpol-deny-all &>/dev/null
     print_ok "ConsoleYAMLSample poc-netpol-deny-all registered"
 
     # Allow Same Network sample
