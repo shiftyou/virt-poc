@@ -188,6 +188,18 @@ spec:
     security:
       admin_user: admin
       admin_password: ${GRAFANA_ADMIN_PASSWORD}
+  deployment:
+    spec:
+      template:
+        spec:
+          volumes:
+          - name: grafana-plugins
+            emptyDir: {}
+          containers:
+          - name: grafana
+            volumeMounts:
+            - name: grafana-plugins
+              mountPath: /var/lib/grafana/plugins
   route:
     spec:
       tls:
@@ -2546,13 +2558,25 @@ ensure_polystat_plugin() {
     oc exec "$grafana_pod" -n "$GRAFANA_NS" -c "$container_name" -- \
         rm -f /tmp/grafana-polystat-panel.zip
 
-    oc delete pod "$grafana_pod" -n "$GRAFANA_NS" --grace-period=10 > /dev/null
-    print_info "Grafana Pod를 재시작하여 플러그인을 로드합니다..."
-    local deploy_name
-    deploy_name=$(oc get deployment -n "$GRAFANA_NS" -l "$grafana_label" \
-        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "${grafana_name}-deployment")
-    oc rollout status "deployment/${deploy_name}" -n "$GRAFANA_NS" --timeout=120s 2>/dev/null || true
-    print_ok "grafana-polystat-panel 플러그인 설치 완료 (airgap)"
+    print_info "Grafana 컨테이너를 재시작하여 플러그인을 로드합니다... (emptyDir 볼륨 유지)"
+    oc exec "$grafana_pod" -n "$GRAFANA_NS" -c "$container_name" -- kill 1 2>/dev/null || true
+    sleep 5
+    print_info "컨테이너 재시작 대기 중... (최대 60초)"
+    local restart_ok=false ri
+    for ri in $(seq 1 12); do
+        if oc exec "$grafana_pod" -n "$GRAFANA_NS" -c "$container_name" -- true 2>/dev/null; then
+            restart_ok=true
+            break
+        fi
+        printf "  [%d/12] 컨테이너 재시작 대기 중...\r" "$ri"
+        sleep 5
+    done
+    echo ""
+    if [ "$restart_ok" = "true" ]; then
+        print_ok "grafana-polystat-panel 플러그인 설치 완료 (airgap)"
+    else
+        print_warn "컨테이너 재시작 대기 시간 초과 — 잠시 후 Grafana가 준비되면 플러그인이 로드됩니다."
+    fi
     return 0
 }
 

@@ -187,6 +187,18 @@ spec:
     security:
       admin_user: admin
       admin_password: ${GRAFANA_ADMIN_PASSWORD}
+  deployment:
+    spec:
+      template:
+        spec:
+          volumes:
+          - name: grafana-plugins
+            emptyDir: {}
+          containers:
+          - name: grafana
+            volumeMounts:
+            - name: grafana-plugins
+              mountPath: /var/lib/grafana/plugins
   route:
     spec:
       tls:
@@ -2545,13 +2557,25 @@ ensure_polystat_plugin() {
     oc exec "$grafana_pod" -n "$GRAFANA_NS" -c "$container_name" -- \
         rm -f /tmp/grafana-polystat-panel.zip
 
-    oc delete pod "$grafana_pod" -n "$GRAFANA_NS" --grace-period=10 > /dev/null
-    print_info "Grafana pod restarting to load the plugin..."
-    local deploy_name
-    deploy_name=$(oc get deployment -n "$GRAFANA_NS" -l "$grafana_label" \
-        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "${grafana_name}-deployment")
-    oc rollout status "deployment/${deploy_name}" -n "$GRAFANA_NS" --timeout=120s 2>/dev/null || true
-    print_ok "grafana-polystat-panel plugin installed (airgap)"
+    print_info "Restarting Grafana container to load the plugin... (emptyDir volume preserved)"
+    oc exec "$grafana_pod" -n "$GRAFANA_NS" -c "$container_name" -- kill 1 2>/dev/null || true
+    sleep 5
+    print_info "Waiting for container restart... (up to 60s)"
+    local restart_ok=false ri
+    for ri in $(seq 1 12); do
+        if oc exec "$grafana_pod" -n "$GRAFANA_NS" -c "$container_name" -- true 2>/dev/null; then
+            restart_ok=true
+            break
+        fi
+        printf "  [%d/12] Waiting for container restart...\r" "$ri"
+        sleep 5
+    done
+    echo ""
+    if [ "$restart_ok" = "true" ]; then
+        print_ok "grafana-polystat-panel plugin installed (airgap)"
+    else
+        print_warn "Container restart timed out — plugin will load once Grafana is ready."
+    fi
     return 0
 }
 
