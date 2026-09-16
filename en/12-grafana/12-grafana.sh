@@ -2480,9 +2480,9 @@ ensure_polystat_plugin() {
     local grafana_label="app=${grafana_name}"
     local grafana_pod container_name
 
-    print_info "Waiting for Grafana Pod to be ready... (up to 60s)"
+    print_info "Waiting for Grafana Pod to be ready... (up to 3min)"
     local cp_ok=false retry
-    for retry in $(seq 1 12); do
+    for retry in $(seq 1 36); do
         grafana_pod=$(oc get pods -n "$GRAFANA_NS" -l "$grafana_label" \
             -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.phase}{"\t"}{.status.containerStatuses[0].ready}{"\n"}{end}' 2>/dev/null \
             | awk -F'\t' '$2=="Running" && $3=="true" {print $1; exit}')
@@ -2494,7 +2494,9 @@ ensure_polystat_plugin() {
                 break
             fi
         fi
-        printf "  [%d/12] Waiting for pod connection...\r" "$retry"
+        local pod_status
+        pod_status=$(oc get pods -n "$GRAFANA_NS" -l "$grafana_label" --no-headers 2>/dev/null | head -1 || true)
+        printf "  [%d/36] Waiting for pod... %s\r" "$retry" "${pod_status:-(no pod)}"
         sleep 5
     done
     echo ""
