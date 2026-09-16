@@ -173,6 +173,7 @@ ensure_grafana_instance() {
     fi
 
     if ! oc get pvc grafana-plugins-pvc -n "$GRAFANA_DEFAULT_NS" &>/dev/null; then
+        print_info "Provisioning PVC grafana-plugins-pvc..."
         cat <<EOF | oc apply -f - > /dev/null
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -185,9 +186,27 @@ spec:
     requests:
       storage: 100Mi
 EOF
-        print_ok "PVC grafana-plugins-pvc created (persistent plugin storage)"
+        local pvc_ok=false pi
+        for pi in $(seq 1 24); do
+            local pvc_phase
+            pvc_phase=$(oc get pvc grafana-plugins-pvc -n "$GRAFANA_DEFAULT_NS" \
+                -o jsonpath='{.status.phase}' 2>/dev/null || true)
+            if [ "$pvc_phase" = "Bound" ]; then
+                pvc_ok=true
+                break
+            fi
+            printf "  [%d/24] Waiting for PVC binding... (%s)\r" "$pi" "${pvc_phase:-Pending}"
+            sleep 5
+        done
+        echo ""
+        if [ "$pvc_ok" = "true" ]; then
+            print_ok "PVC grafana-plugins-pvc created (persistent plugin storage)"
+        else
+            print_warn "PVC is not yet Bound — continuing."
+        fi
     fi
 
+    print_info "Creating Grafana instance..."
     if cat <<EOF | oc apply -f - > /dev/null
 apiVersion: grafana.integreatly.org/v1beta1
 kind: Grafana
@@ -222,15 +241,27 @@ spec:
         termination: edge
 EOF
     then
-        print_ok "Grafana instance poc-grafana created in namespace ${GRAFANA_DEFAULT_NS} (admin / ${GRAFANA_ADMIN_PASSWORD})"
+        :
     else
         print_error "Failed to create the Grafana instance."
         print_info "  Check that the Grafana Operator's OperatorGroup watches namespace ${GRAFANA_DEFAULT_NS} — see operators/grafana-operator.md."
         return 1
     fi
 
-    detect_grafana_instance
-    if [ -z "${GRAFANA_NS:-}" ]; then
+    local gi_ok=false gi
+    for gi in $(seq 1 24); do
+        detect_grafana_instance
+        if [ -n "${GRAFANA_NS:-}" ]; then
+            gi_ok=true
+            break
+        fi
+        printf "  [%d/24] Waiting for Grafana instance...\r" "$gi"
+        sleep 5
+    done
+    echo ""
+    if [ "$gi_ok" = "true" ]; then
+        print_ok "Grafana instance poc-grafana created in namespace ${GRAFANA_NS} (admin / ${GRAFANA_ADMIN_PASSWORD})"
+    else
         print_error "Grafana instance was applied but is not showing up yet."
         print_info "  Rerun this script once 'oc get grafana -n ${GRAFANA_DEFAULT_NS}' shows it."
         return 1

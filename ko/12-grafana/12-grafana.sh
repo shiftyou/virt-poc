@@ -174,6 +174,7 @@ ensure_grafana_instance() {
     fi
 
     if ! oc get pvc grafana-plugins-pvc -n "$GRAFANA_DEFAULT_NS" &>/dev/null; then
+        print_info "PVC grafana-plugins-pvc 프로비저닝 중..."
         cat <<EOF | oc apply -f - > /dev/null
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -186,9 +187,27 @@ spec:
     requests:
       storage: 100Mi
 EOF
-        print_ok "PVC grafana-plugins-pvc 생성됨 (플러그인 영구 저장)"
+        local pvc_ok=false pi
+        for pi in $(seq 1 24); do
+            local pvc_phase
+            pvc_phase=$(oc get pvc grafana-plugins-pvc -n "$GRAFANA_DEFAULT_NS" \
+                -o jsonpath='{.status.phase}' 2>/dev/null || true)
+            if [ "$pvc_phase" = "Bound" ]; then
+                pvc_ok=true
+                break
+            fi
+            printf "  [%d/24] PVC 바인딩 대기 중... (%s)\r" "$pi" "${pvc_phase:-Pending}"
+            sleep 5
+        done
+        echo ""
+        if [ "$pvc_ok" = "true" ]; then
+            print_ok "PVC grafana-plugins-pvc 생성됨 (플러그인 영구 저장)"
+        else
+            print_warn "PVC가 아직 Bound 상태가 아닙니다 — 계속 진행합니다."
+        fi
     fi
 
+    print_info "Grafana 인스턴스 생성 중..."
     if cat <<EOF | oc apply -f - > /dev/null
 apiVersion: grafana.integreatly.org/v1beta1
 kind: Grafana
@@ -223,15 +242,27 @@ spec:
         termination: edge
 EOF
     then
-        print_ok "Grafana 인스턴스 poc-grafana가 namespace ${GRAFANA_DEFAULT_NS}에 생성되었습니다 (admin / ${GRAFANA_ADMIN_PASSWORD})"
+        :
     else
         print_error "Grafana 인스턴스 생성에 실패했습니다."
         print_info "  Grafana Operator의 OperatorGroup이 namespace ${GRAFANA_DEFAULT_NS}를 감시하는지 확인하세요 — operators/grafana-operator.md 참고."
         return 1
     fi
 
-    detect_grafana_instance
-    if [ -z "${GRAFANA_NS:-}" ]; then
+    local gi_ok=false gi
+    for gi in $(seq 1 24); do
+        detect_grafana_instance
+        if [ -n "${GRAFANA_NS:-}" ]; then
+            gi_ok=true
+            break
+        fi
+        printf "  [%d/24] Grafana 인스턴스 대기 중...\r" "$gi"
+        sleep 5
+    done
+    echo ""
+    if [ "$gi_ok" = "true" ]; then
+        print_ok "Grafana 인스턴스 poc-grafana가 namespace ${GRAFANA_NS}에 생성되었습니다 (admin / ${GRAFANA_ADMIN_PASSWORD})"
+    else
         print_error "Grafana 인스턴스를 적용했지만 아직 조회되지 않습니다."
         print_info "  'oc get grafana -n ${GRAFANA_DEFAULT_NS}'에서 확인되면 이 스크립트를 다시 실행하세요."
         return 1
