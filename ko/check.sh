@@ -588,6 +588,7 @@ main() {
     echo "║   OpenShift Virtualization 기능 검증 스크립트                 ║"
     echo "║                                                                ║"
     echo "╚════════════════════════════════════════════════════════════════╝"
+    echo -e "${DIM}  virt-poc ${POC_VERSION}${NC}"
     echo ""
 
     preflight
