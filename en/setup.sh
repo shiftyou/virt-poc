@@ -11,7 +11,6 @@
 # =============================================================================
 
 set -euo pipefail
-POC_VERSION="v2026.09.16-1"
 trap 'echo -e "\n\033[0;31m[ERROR]\033[0m Command failed at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
 
 ENV_FILE="./env.conf"

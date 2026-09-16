@@ -9,7 +9,6 @@
 # =============================================================================
 
 set -euo pipefail
-POC_VERSION="v2026.09.16-1"
 trap 'echo -e "\n\033[0;31m[ERROR]\033[0m Command failed at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -37,6 +36,7 @@ if [ -f "${SCRIPT_DIR}/../utils/common.sh" ]; then
 else
     # ── standalone mode: inline common helpers ──
     RED='\033[0;31m'; GREEN='\033[0;32m'; DIM='\033[2m'
+    POC_VERSION=$(cat "${SCRIPT_DIR}/../../VERSION" 2>/dev/null || echo "dev")
     YELLOW='\033[1;33m'; BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033[0m'
     print_info()  { echo -e "${BLUE}[INFO]${NC} $1"; }
     print_ok()    { echo -e "${GREEN}[ OK ]${NC} $1"; }

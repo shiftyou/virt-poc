@@ -18,7 +18,8 @@
 [ -n "${_COMMON_SH_LOADED:-}" ] && return 0
 _COMMON_SH_LOADED=1
 
-POC_VERSION="v2026.09.16-1"
+_COMMON_SH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+POC_VERSION=$(cat "${_COMMON_SH_DIR}/../../VERSION" 2>/dev/null || echo "dev")
 
 # ---------------------------------------------------------------------------
 # 색상 상수
