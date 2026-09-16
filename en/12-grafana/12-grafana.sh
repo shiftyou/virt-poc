@@ -2507,6 +2507,14 @@ ensure_polystat_plugin() {
         return 1
     fi
 
+    print_info "Waiting for Grafana Pod to be ready..."
+    wait_grafana_ready "$GRAFANA_NS" "$grafana_label"
+    grafana_pod=$(oc get pods -n "$GRAFANA_NS" -l "$grafana_label" \
+        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+    container_name=$(oc get pod "$grafana_pod" -n "$GRAFANA_NS" \
+        -o jsonpath='{.spec.containers[0].name}' 2>/dev/null || echo "grafana")
+    print_ok "Grafana Pod ready: ${grafana_pod} (container: ${container_name})"
+
     oc cp "$zip_file" "$GRAFANA_NS/$grafana_pod:/tmp/grafana-polystat-panel.zip" -c "$container_name"
     oc exec "$grafana_pod" -n "$GRAFANA_NS" -c "$container_name" -- \
         unzip -o -q /tmp/grafana-polystat-panel.zip -d /var/lib/grafana/plugins/
