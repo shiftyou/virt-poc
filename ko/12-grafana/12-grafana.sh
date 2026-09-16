@@ -2480,11 +2480,11 @@ ensure_polystat_plugin() {
         oc patch grafana "$grafana_name" -n "$GRAFANA_NS" --type=merge \
             -p "{\"spec\":{\"deployment\":{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"${container_name}\",\"env\":[{\"name\":\"GF_INSTALL_PLUGINS\",\"value\":\"${new_plugins}\"}]}]}}}}}}" > /dev/null 2>&1 || true
 
-        print_info "Grafana Pod가 플러그인 설치를 위해 재시작됩니다 — 대기 중..."
+        print_info "Grafana Pod가 플러그인 설치를 위해 재시작됩니다 — 대기 중... (최대 60초)"
         local deploy_name
         deploy_name=$(oc get deployment -n "$GRAFANA_NS" -l "$grafana_label" \
             -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "${grafana_name}-deployment")
-        oc rollout status "deployment/${deploy_name}" -n "$GRAFANA_NS" --timeout=180s 2>/dev/null || true
+        oc rollout status "deployment/${deploy_name}" -n "$GRAFANA_NS" --timeout=60s 2>/dev/null || true
     fi
 
     wait_grafana_ready "$GRAFANA_NS" "$grafana_label"
@@ -2503,6 +2503,12 @@ ensure_polystat_plugin() {
     fi
 
     print_warn "온라인 플러그인 설치 실패 (airgap 환경?) — 로컬 zip에서 설치합니다..."
+
+    print_info "GF_INSTALL_PLUGINS 환경변수를 제거합니다 (airgap에서 crash 방지)..."
+    oc patch grafana "$grafana_name" -n "$GRAFANA_NS" --type=json \
+        -p '[{"op":"remove","path":"/spec/deployment/spec/template/spec/containers/0/env"}]' 2>/dev/null || true
+    sleep 5
+
     local zip_file="${SCRIPT_DIR}/grafana-polystat-panel.zip"
     if [ ! -f "$zip_file" ]; then
         print_error "로컬 플러그인 zip 파일을 찾을 수 없습니다: ${zip_file}"
@@ -2512,15 +2518,16 @@ ensure_polystat_plugin() {
     print_info "Grafana Pod가 준비될 때까지 대기 중... (최대 60초)"
     local cp_ok=false retry
     for retry in $(seq 1 12); do
-        wait_grafana_ready "$GRAFANA_NS" "$grafana_label"
         grafana_pod=$(oc get pods -n "$GRAFANA_NS" -l "$grafana_label" \
-            -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
-        container_name=$(oc get pod "$grafana_pod" -n "$GRAFANA_NS" \
-            -o jsonpath='{.spec.containers[0].name}' 2>/dev/null || echo "grafana")
-
-        if oc exec "$grafana_pod" -n "$GRAFANA_NS" -c "$container_name" -- true 2>/dev/null; then
-            cp_ok=true
-            break
+            -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.phase}{"\t"}{.status.containerStatuses[0].ready}{"\n"}{end}' 2>/dev/null \
+            | awk -F'\t' '$2=="Running" && $3=="true" {print $1; exit}')
+        if [ -n "$grafana_pod" ]; then
+            container_name=$(oc get pod "$grafana_pod" -n "$GRAFANA_NS" \
+                -o jsonpath='{.spec.containers[0].name}' 2>/dev/null || echo "grafana")
+            if oc exec "$grafana_pod" -n "$GRAFANA_NS" -c "$container_name" -- true 2>/dev/null; then
+                cp_ok=true
+                break
+            fi
         fi
         printf "  [%d/12] Pod 연결 대기 중...\r" "$retry"
         sleep 5
@@ -2544,7 +2551,7 @@ ensure_polystat_plugin() {
     local deploy_name
     deploy_name=$(oc get deployment -n "$GRAFANA_NS" -l "$grafana_label" \
         -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "${grafana_name}-deployment")
-    oc rollout status "deployment/${deploy_name}" -n "$GRAFANA_NS" --timeout=180s 2>/dev/null || true
+    oc rollout status "deployment/${deploy_name}" -n "$GRAFANA_NS" --timeout=120s 2>/dev/null || true
     print_ok "grafana-polystat-panel 플러그인 설치 완료 (airgap)"
     return 0
 }
