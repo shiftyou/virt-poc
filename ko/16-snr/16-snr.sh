@@ -194,8 +194,14 @@ step_namespace() {
     if oc get namespace "$NS" &>/dev/null; then
         print_ok "Namespace ${NS}이(가) 이미 존재합니다 — 건너뜀"
     else
+        print_info "Namespace $NS 생성 중..."
         oc new-project "$NS" > /dev/null
-        print_ok "Namespace $NS 생성 완료"
+        if oc get namespace "$NS" &>/dev/null; then
+            print_ok "Namespace $NS 생성됨"
+        else
+            print_error "Namespace $NS 생성 실패"
+            return 1
+        fi
     fi
 }
 
@@ -216,8 +222,14 @@ spec:
     spec:
       remediationStrategy: ResourceDeletion
 EOF
+    print_info "SelfNodeRemediationTemplate poc-snr-template 생성 중..."
     confirm_and_apply snr-template.yaml
-    print_ok "SelfNodeRemediationTemplate poc-snr-template 생성 완료"
+    if oc get selfnoderemediationtemplate poc-snr-template -n "$REMEDIATION_NS" &>/dev/null; then
+        print_ok "SelfNodeRemediationTemplate poc-snr-template 생성됨"
+    else
+        print_error "SelfNodeRemediationTemplate poc-snr-template 생성 실패"
+        return 1
+    fi
 }
 
 # =============================================================================
@@ -250,8 +262,14 @@ spec:
       status: "Unknown"
       duration: 300s
 EOF
+    print_info "NodeHealthCheck poc-snr-nhc 생성 중..."
     confirm_and_apply nhc-snr.yaml
-    print_ok "NodeHealthCheck poc-snr-nhc 생성 완료"
+    if oc get nodehealthcheck poc-snr-nhc &>/dev/null; then
+        print_ok "NodeHealthCheck poc-snr-nhc 생성됨"
+    else
+        print_error "NodeHealthCheck poc-snr-nhc 생성 실패"
+        return 1
+    fi
     print_info "  조건: Ready=False 또는 Unknown이 300초 이상 지속 → SNR 트리거"
 }
 
@@ -296,8 +314,14 @@ spec:
           status: "Unknown"
           duration: 300s
 EOF
+    print_info "ConsoleYAMLSample poc-nodehealthcheck-snr 등록 중..."
     oc apply -f consoleyamlsample-nhc-snr.yaml
-    print_ok "ConsoleYAMLSample poc-nodehealthcheck-snr 등록 완료"
+    if oc get consoleyamlsample poc-nodehealthcheck-snr &>/dev/null; then
+        print_ok "ConsoleYAMLSample poc-nodehealthcheck-snr 등록됨"
+    else
+        print_error "ConsoleYAMLSample poc-nodehealthcheck-snr 등록 실패"
+        return 1
+    fi
 }
 
 step_vms() {
@@ -325,8 +349,9 @@ step_vms() {
           }
         }"
 
+        print_info "VM $VM 배포 중..."
         virtctl start "$VM" -n "$NS" 2>/dev/null || true
-        print_ok "VM $VM 배포 완료 (노드: ${NODE1})"
+        print_ok "VM $VM 배포됨 (노드: ${NODE1})"
     done
 }
 
@@ -362,11 +387,38 @@ print_summary() {
 cleanup() {
     print_step "--cleanup: 16-snr 리소스 삭제"
     local _rem_ns="openshift-workload-availability"
+
+    print_info "Project poc-snr 삭제 중..."
     oc delete project poc-snr --ignore-not-found 2>/dev/null || true
+    if ! oc get namespace poc-snr &>/dev/null; then
+        print_ok "Project poc-snr 삭제됨"
+    else
+        print_warn "Project poc-snr 삭제 진행 중 (백그라운드)"
+    fi
+
+    print_info "NodeHealthCheck poc-snr-nhc 삭제 중..."
     oc delete nodehealthcheck poc-snr-nhc --ignore-not-found 2>/dev/null || true
+    if ! oc get nodehealthcheck poc-snr-nhc &>/dev/null; then
+        print_ok "NodeHealthCheck poc-snr-nhc 삭제됨"
+    else
+        print_warn "NodeHealthCheck poc-snr-nhc 삭제 실패"
+    fi
+
+    print_info "SelfNodeRemediationTemplate poc-snr-template 삭제 중..."
     oc delete selfnoderemediationtemplate poc-snr-template -n "$_rem_ns" --ignore-not-found 2>/dev/null || true
+    if ! oc get selfnoderemediationtemplate poc-snr-template -n "$_rem_ns" &>/dev/null; then
+        print_ok "SelfNodeRemediationTemplate poc-snr-template 삭제됨"
+    else
+        print_warn "SelfNodeRemediationTemplate poc-snr-template 삭제 실패"
+    fi
+
+    print_info "ConsoleYAMLSample poc-nodehealthcheck-snr 삭제 중..."
     oc delete consoleyamlsample poc-nodehealthcheck-snr --ignore-not-found 2>/dev/null || true
-    print_ok "16-snr 리소스 삭제 완료"
+    if ! oc get consoleyamlsample poc-nodehealthcheck-snr &>/dev/null; then
+        print_ok "ConsoleYAMLSample poc-nodehealthcheck-snr 삭제됨"
+    else
+        print_warn "ConsoleYAMLSample poc-nodehealthcheck-snr 삭제 실패"
+    fi
 }
 
 # =============================================================================

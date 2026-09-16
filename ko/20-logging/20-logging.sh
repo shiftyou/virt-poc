@@ -346,8 +346,14 @@ spec:
     profile: ${AUDIT_PROFILE}
 EOF
 
+    print_info "Audit Policy 적용 중..."
     confirm_and_apply ./audit-policy.yaml false
-    print_ok "Audit Policy 적용 완료"
+    if oc get apiserver cluster &>/dev/null; then
+        print_ok "Audit Policy 적용됨"
+    else
+        print_error "Audit Policy 적용 실패"
+        return 1
+    fi
     print_info "kube-apiserver rollout에 수 분이 소요될 수 있습니다."
     print_info "  확인: oc get co kube-apiserver"
 }
@@ -417,8 +423,14 @@ ${log_store_block}
     type: vector
 EOF
 
+    print_info "ClusterLogging '${CL_NAME}' 생성 중..."
     confirm_and_apply ./cluster-logging.yaml false
-    print_ok "ClusterLogging '${CL_NAME}' 생성 완료"
+    if oc get clusterlogging "${CL_NAME}" -n "${LOGGING_NS}" &>/dev/null; then
+        print_ok "ClusterLogging '${CL_NAME}' 생성됨"
+    else
+        print_error "ClusterLogging '${CL_NAME}' 생성 실패"
+        return 1
+    fi
 }
 
 # =============================================================================
@@ -450,8 +462,14 @@ spec:
   storageClassName: ${_obc_sc}
 EOF
         echo "생성된 파일: obc-loki.yaml"
+        print_info "OBC obc-loki 생성 중..."
         oc apply -f ./obc-loki.yaml
-        print_ok "OBC obc-loki 생성 완료"
+        if oc get obc obc-loki -n "${LOGGING_NS}" &>/dev/null; then
+            print_ok "OBC obc-loki 생성됨"
+        else
+            print_error "OBC obc-loki 생성 실패"
+            return 1
+        fi
     fi
 
     # Bound 대기
@@ -498,6 +516,7 @@ step_loki_secret() {
         exit 1
     fi
 
+    print_info "S3 Secret 'logging-loki-s3' 생성 중..."
     oc create secret generic logging-loki-s3 \
         -n "${LOGGING_NS}" \
         --from-literal=access_key_id="${S3_ACCESS_KEY}" \
@@ -505,7 +524,12 @@ step_loki_secret() {
         --from-literal=bucketnames="${S3_BUCKET}" \
         --from-literal=endpoint="${S3_ENDPOINT}" \
         --from-literal=region="${S3_REGION}"
-    print_ok "S3 Secret 'logging-loki-s3' 생성 완료"
+    if oc get secret logging-loki-s3 -n "${LOGGING_NS}" &>/dev/null; then
+        print_ok "S3 Secret 'logging-loki-s3' 생성됨"
+    else
+        print_error "S3 Secret 'logging-loki-s3' 생성 실패"
+        return 1
+    fi
     print_info "  endpoint : ${S3_ENDPOINT}"
     print_info "  bucket   : ${S3_BUCKET}"
 }
@@ -541,6 +565,7 @@ spec:
     mode: openshift-logging
 EOF
 
+    print_info "LokiStack '${LOKI_NAME}' 생성 중..."
     confirm_and_apply ./loki-stack.yaml false
 
     # POC 환경용 리소스 축소 (LokiStack CRD는 리소스 오버라이드를 지원하지 않아 StatefulSet을 직접 패치)
@@ -700,8 +725,14 @@ ${output_section}
 EOF
     fi
 
+    print_info "ClusterLogForwarder '${CLF_NAME}' 적용 중..."
     confirm_and_apply ./cluster-log-forwarder.yaml false
-    print_ok "ClusterLogForwarder '${CLF_NAME}' 적용 완료"
+    if oc get clusterlogforwarder "${CLF_NAME}" -n "${LOGGING_NS}" &>/dev/null; then
+        print_ok "ClusterLogForwarder '${CLF_NAME}' 적용됨"
+    else
+        print_error "ClusterLogForwarder '${CLF_NAME}' 적용 실패"
+        return 1
+    fi
 }
 
 # =============================================================================
@@ -735,8 +766,14 @@ spec:
       name: ${LOKI_NAME}
       namespace: ${LOGGING_NS}
 EOF
+        print_info "UIPlugin 'logging' 생성 중..."
         oc apply -f ./uiplugin-logging.yaml
-        print_ok "UIPlugin 'logging' 생성 완료"
+        if oc get uiplugin logging &>/dev/null; then
+            print_ok "UIPlugin 'logging' 생성됨"
+        else
+            print_error "UIPlugin 'logging' 생성 실패"
+            return 1
+        fi
         print_info "  Console을 새로고침하면 Observe > Logs 메뉴가 나타납니다."
     else
         # v5: consoleplugin 방식 — 기존 plugins 목록에 추가 (덮어쓰지 않음)
@@ -761,9 +798,10 @@ EOF
             oc patch console.operator.openshift.io cluster --type=merge \
                 -p '{"spec":{"plugins":[]}}' 2>/dev/null || true
         fi
+        print_info "logging-view-plugin 활성화 중..."
         oc patch console.operator.openshift.io cluster --type=json \
             -p '[{"op":"add","path":"/spec/plugins/-","value":"logging-view-plugin"}]'
-        print_ok "logging-view-plugin 활성화 완료"
+        print_ok "logging-view-plugin 활성화됨"
         print_info "  Console을 새로고침하면 Observe > Logs 메뉴가 나타납니다."
     fi
 }
@@ -823,12 +861,43 @@ step_verify() {
 cleanup() {
     print_step "--cleanup: 20-logging 리소스 삭제"
     local _logging_ns="openshift-logging"
+
+    print_info "ClusterLogForwarder 삭제 중..."
     oc delete clusterlogforwarder --all -n "$_logging_ns" --ignore-not-found 2>/dev/null || true
+    print_ok "ClusterLogForwarder 삭제됨"
+
+    print_info "ClusterLogging instance 삭제 중..."
     oc delete clusterlogging instance -n "$_logging_ns" --ignore-not-found 2>/dev/null || true
+    if ! oc get clusterlogging instance -n "$_logging_ns" &>/dev/null; then
+        print_ok "ClusterLogging instance 삭제됨"
+    else
+        print_warn "ClusterLogging instance 삭제 실패"
+    fi
+
+    print_info "LokiStack logging-loki 삭제 중..."
     oc delete lokistack logging-loki -n "$_logging_ns" --ignore-not-found 2>/dev/null || true
+    if ! oc get lokistack logging-loki -n "$_logging_ns" &>/dev/null; then
+        print_ok "LokiStack logging-loki 삭제됨"
+    else
+        print_warn "LokiStack logging-loki 삭제 실패"
+    fi
+
+    print_info "Secret logging-loki-s3 삭제 중..."
     oc delete secret logging-loki-s3 -n "$_logging_ns" --ignore-not-found 2>/dev/null || true
+    if ! oc get secret logging-loki-s3 -n "$_logging_ns" &>/dev/null; then
+        print_ok "Secret logging-loki-s3 삭제됨"
+    else
+        print_warn "Secret logging-loki-s3 삭제 실패"
+    fi
+
+    print_info "OBC obc-loki 삭제 중..."
     oc delete obc obc-loki -n "$_logging_ns" --ignore-not-found 2>/dev/null || true
-    print_ok "20-logging 리소스 삭제 완료"
+    if ! oc get obc obc-loki -n "$_logging_ns" &>/dev/null; then
+        print_ok "OBC obc-loki 삭제됨"
+    else
+        print_warn "OBC obc-loki 삭제 실패"
+    fi
+
     print_info "  Namespace ${_logging_ns}은(는) Logging Operator가 관리하므로 삭제하지 않습니다."
 }
 

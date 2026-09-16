@@ -172,8 +172,14 @@ install_garage() {
     if oc get namespace poc-garage &>/dev/null; then
         print_ok "Namespace poc-garage 이미 존재합니다 — 건너뜀"
     else
+        print_info "Namespace poc-garage 생성 중..."
         oc new-project poc-garage > /dev/null
-        print_ok "Namespace poc-garage 생성됨"
+        if oc get namespace poc-garage &>/dev/null; then
+            print_ok "Namespace poc-garage 생성됨"
+        else
+            print_error "Namespace poc-garage 생성 실패"
+            return 1
+        fi
     fi
 
     # SCC
@@ -552,8 +558,14 @@ spec:
   storageClassName: ${obc_sc}
 EOF
         echo "생성된 파일: obc-backups.yaml"
+        print_info "ObjectBucketClaim obc-backups 생성 중..."
         oc apply -f obc-backups.yaml
-        print_ok "ObjectBucketClaim obc-backups 성공적으로 생성됨 → ns: ${NS}"
+        if wait_for_resource obc obc-backups "$NS"; then
+            print_ok "ObjectBucketClaim obc-backups 생성됨 → ns: ${NS}"
+        else
+            print_error "ObjectBucketClaim obc-backups 생성 실패"
+            return 1
+        fi
     fi
 
     # Bound 대기
@@ -615,8 +627,14 @@ stringData:
     aws_access_key_id=${S3_ACCESS_KEY}
     aws_secret_access_key=${S3_SECRET_KEY}
 EOF
+    print_info "cloud-credentials Secret 생성 중..."
     confirm_and_apply cloud-credentials-secret.yaml
-    print_ok "cloud-credentials Secret 성공적으로 생성됨 → ns: ${NS}"
+    if wait_for_resource secret cloud-credentials "$NS"; then
+        print_ok "cloud-credentials Secret 생성됨 → ns: ${NS}"
+    else
+        print_error "cloud-credentials Secret 생성 실패"
+        return 1
+    fi
 }
 
 # =============================================================================
@@ -721,8 +739,14 @@ spec:
           key: cloud
           name: cloud-credentials
 EOF
+    print_info "DataProtectionApplication poc-dpa 배포 중..."
     confirm_and_apply poc-dpa.yaml
-    print_ok "DataProtectionApplication poc-dpa 성공적으로 배포됨 → ns: ${NS}"
+    if wait_for_resource dpa poc-dpa "$NS"; then
+        print_ok "DataProtectionApplication poc-dpa 배포됨 → ns: ${NS}"
+    else
+        print_error "DataProtectionApplication poc-dpa 배포 실패"
+        return 1
+    fi
 }
 
 # =============================================================================
@@ -804,8 +828,14 @@ step_vm_namespace() {
     if oc get namespace "$VM_NS" &>/dev/null; then
         print_ok "Namespace $VM_NS 이미 존재합니다 — 건너뜀"
     else
+        print_info "Namespace $VM_NS 생성 중..."
         oc new-project "$VM_NS" > /dev/null
-        print_ok "Namespace $VM_NS 성공적으로 생성됨"
+        if oc get namespace "$VM_NS" &>/dev/null; then
+            print_ok "Namespace $VM_NS 생성됨"
+        else
+            print_error "Namespace $VM_NS 생성 실패"
+            return 1
+        fi
     fi
 }
 
@@ -829,8 +859,14 @@ step_vm() {
     oc process -n openshift poc -p NAME="poc-oadp-vm" | \
         sed 's/  running: false/  runStrategy: Always/' > "${vm_yaml}"
     echo "생성된 파일: ${vm_yaml}"
+    print_info "VM poc-oadp-vm 생성 중..."
     confirm_and_apply "${vm_yaml}"
-    print_ok "VM poc-oadp-vm 성공적으로 생성됨 → ns: ${VM_NS}"
+    if wait_for_resource vm poc-oadp-vm "$VM_NS"; then
+        print_ok "VM poc-oadp-vm 생성됨 → ns: ${VM_NS}"
+    else
+        print_error "VM poc-oadp-vm 생성 실패"
+        return 1
+    fi
     print_info "  VM 상태 확인: oc get vm -n ${VM_NS}"
 }
 
@@ -862,8 +898,14 @@ spec:
   ttl: 720h0m0s
   snapshotVolumes: true
 EOF
+        print_info "Backup poc-oadp-backup 생성 중..."
         confirm_and_apply poc-oadp-backup.yaml
-        print_ok "Backup poc-oadp-backup 성공적으로 생성됨 → ns: ${NS}"
+        if wait_for_resource backup poc-oadp-backup "$NS"; then
+            print_ok "Backup poc-oadp-backup 생성됨 → ns: ${NS}"
+        else
+            print_error "Backup poc-oadp-backup 생성 실패"
+            return 1
+        fi
     fi
 
     # Restore YAML 생성 (적용하지 않음)
@@ -934,8 +976,9 @@ spec:
               key: cloud
               name: cloud-credentials
 EOF
+    print_info "ConsoleYAMLSample poc-dataprotectionapplication 등록 중..."
     oc apply -f consoleyamlsample-dpa.yaml
-    print_ok "ConsoleYAMLSample poc-dataprotectionapplication 성공적으로 등록됨"
+    print_ok "ConsoleYAMLSample poc-dataprotectionapplication 등록됨"
 
     cat > consoleyamlsample-backup.yaml <<EOF
 apiVersion: console.openshift.io/v1
@@ -961,8 +1004,9 @@ spec:
       ttl: 720h0m0s
       snapshotVolumes: true
 EOF
+    print_info "ConsoleYAMLSample poc-backup 등록 중..."
     oc apply -f consoleyamlsample-backup.yaml
-    print_ok "ConsoleYAMLSample poc-backup 성공적으로 등록됨"
+    print_ok "ConsoleYAMLSample poc-backup 등록됨"
 
     cat > consoleyamlsample-restore.yaml <<EOF
 apiVersion: console.openshift.io/v1
@@ -987,8 +1031,9 @@ spec:
         - poc-oadp
       restorePVs: true
 EOF
+    print_info "ConsoleYAMLSample poc-restore 등록 중..."
     oc apply -f consoleyamlsample-restore.yaml
-    print_ok "ConsoleYAMLSample poc-restore 성공적으로 등록됨"
+    print_ok "ConsoleYAMLSample poc-restore 등록됨"
 }
 
 print_summary() {

@@ -247,7 +247,12 @@ EOF
             --namespace="$TARGET_NS" \
             --no-create \
             --insecure
-        print_ok "DataVolume $DV_NAME 생성됨 (로컬 업로드 완료)"
+        if oc get dv "$DV_NAME" -n "$TARGET_NS" &>/dev/null; then
+            print_ok "DataVolume $DV_NAME 생성됨 (로컬 업로드 완료)"
+        else
+            print_error "DataVolume $DV_NAME 생성 실패"
+            return 1
+        fi
     else
         print_info "로컬 파일 없음 (${url_filename}) — HTTP import 사용"
         print_info "DataVolume 생성 URL: ${GOLDEN_IMAGE_URL}"
@@ -278,8 +283,14 @@ spec:
     volumeMode: Block
 EOF
         echo "생성된 파일: datavolume-poc-golden.yaml"
+        print_info "DataVolume $DV_NAME 생성 중..."
         oc apply -f datavolume-poc-golden.yaml
-        print_ok "DataVolume $DV_NAME 생성됨 (HTTP import 진행 중)"
+        if oc get dv "$DV_NAME" -n "$TARGET_NS" &>/dev/null; then
+            print_ok "DataVolume $DV_NAME 생성됨 (HTTP import 진행 중)"
+        else
+            print_error "DataVolume $DV_NAME 생성 실패"
+            return 1
+        fi
     fi
 }
 
@@ -305,8 +316,14 @@ spec:
       namespace: ${TARGET_NS}
 EOF
     echo "생성된 파일: datasource-poc-golden.yaml"
+    print_info "DataSource $DS_NAME 생성 중..."
     oc apply -f datasource-poc-golden.yaml
-    print_ok "DataSource $DS_NAME 생성됨"
+    if oc get datasource "$DS_NAME" -n "$TARGET_NS" &>/dev/null; then
+        print_ok "DataSource $DS_NAME 생성됨"
+    else
+        print_error "DataSource $DS_NAME 생성 실패"
+        return 1
+    fi
 
     # DataSource 존재 확인 후 PVC Bound 대기
     print_info "PVC ${DV_NAME}이 Bound 상태가 되기를 대기 중..."
@@ -467,9 +484,14 @@ EOF
 #    from: '[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}'
 
     echo "생성된 파일: template-poc.yaml"
+    print_info "Template $TEMPLATE_NAME 등록 중..."
     oc apply -f template-poc.yaml
-
-    print_ok "Template $TEMPLATE_NAME 등록됨 (namespace: $TEMPLATE_NS)"
+    if oc get template "$TEMPLATE_NAME" -n "$TEMPLATE_NS" &>/dev/null; then
+        print_ok "Template $TEMPLATE_NAME 등록됨 (namespace: $TEMPLATE_NS)"
+    else
+        print_error "Template $TEMPLATE_NAME 등록 실패"
+        return 1
+    fi
 }
 
 # =============================================================================
@@ -502,6 +524,7 @@ spec:
           namespace: openshift-virtualization-os-images
 EOF
     echo "생성된 파일: consoleyamlsample-datasource.yaml"
+    print_info "ConsoleYAMLSample poc-datasource 등록 중..."
     oc apply -f consoleyamlsample-datasource.yaml
     print_ok "ConsoleYAMLSample poc-datasource 등록됨"
 }

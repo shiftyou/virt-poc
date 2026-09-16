@@ -272,8 +272,14 @@ step_namespace() {
     if oc get namespace "$NS" &>/dev/null; then
         print_ok "Namespace $NS 이미 존재합니다 — 건너뜀"
     else
+        print_info "Namespace $NS 생성 중..."
         oc new-project "$NS" > /dev/null
-        print_ok "Namespace $NS 생성됨"
+        if oc get namespace "$NS" &>/dev/null; then
+            print_ok "Namespace $NS 생성됨"
+        else
+            print_error "Namespace $NS 생성 실패"
+            return 1
+        fi
     fi
 }
 
@@ -305,6 +311,7 @@ spec:
     secrets: "20"
 EOF
     echo "생성된 파일: resourcequota-poc.yaml"
+    print_info "ResourceQuota poc-quota 적용 중..."
     oc apply -f resourcequota-poc.yaml
 
     print_ok "ResourceQuota poc-quota 적용됨"
@@ -350,6 +357,7 @@ spec:
         secrets: "20"
 EOF
     echo "생성된 파일: consoleyamlsample-resourcequota.yaml"
+    print_info "ConsoleYAMLSample poc-resource-quota 등록 중..."
     oc apply -f consoleyamlsample-resourcequota.yaml
     print_ok "ConsoleYAMLSample poc-resource-quota 등록됨"
 }
@@ -369,6 +377,7 @@ step_vms() {
             continue
         fi
 
+        print_info "VM $VM 생성 중..."
         oc process -n openshift poc -p NAME="$VM" | \
         sed 's/runStrategy: Always/runStrategy: Halted/' | sed 's/  running: false/  runStrategy: Halted/' > "${VM}.yaml"
         echo "생성된 파일: ${VM}.yaml"

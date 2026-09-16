@@ -172,8 +172,14 @@ install_garage() {
     if oc get namespace poc-garage &>/dev/null; then
         print_ok "Namespace poc-garage already exists — skipping"
     else
+        print_info "Namespace poc-garage creating..."
         oc new-project poc-garage > /dev/null
-        print_ok "Namespace poc-garage created"
+        if oc get namespace poc-garage &>/dev/null; then
+            print_ok "Namespace poc-garage created"
+        else
+            print_error "Namespace poc-garage creation failed"
+            return 1
+        fi
     fi
 
     # SCC
@@ -552,8 +558,14 @@ spec:
   storageClassName: ${obc_sc}
 EOF
         echo "Generated file: obc-backups.yaml"
+        print_info "ObjectBucketClaim obc-backups creating..."
         oc apply -f obc-backups.yaml
-        print_ok "ObjectBucketClaim obc-backups created successfully → ns: ${NS}"
+        if wait_for_resource obc obc-backups "$NS"; then
+            print_ok "ObjectBucketClaim obc-backups created → ns: ${NS}"
+        else
+            print_error "ObjectBucketClaim obc-backups creation failed"
+            return 1
+        fi
     fi
 
     # Wait for Bound
@@ -615,8 +627,14 @@ stringData:
     aws_access_key_id=${S3_ACCESS_KEY}
     aws_secret_access_key=${S3_SECRET_KEY}
 EOF
+    print_info "cloud-credentials Secret creating..."
     confirm_and_apply cloud-credentials-secret.yaml
-    print_ok "cloud-credentials Secret created successfully → ns: ${NS}"
+    if wait_for_resource secret cloud-credentials "$NS"; then
+        print_ok "cloud-credentials Secret created → ns: ${NS}"
+    else
+        print_error "cloud-credentials Secret creation failed"
+        return 1
+    fi
 }
 
 # =============================================================================
@@ -721,8 +739,14 @@ spec:
           key: cloud
           name: cloud-credentials
 EOF
+    print_info "DataProtectionApplication poc-dpa deploying..."
     confirm_and_apply poc-dpa.yaml
-    print_ok "DataProtectionApplication poc-dpa deployed successfully → ns: ${NS}"
+    if wait_for_resource dpa poc-dpa "$NS"; then
+        print_ok "DataProtectionApplication poc-dpa deployed → ns: ${NS}"
+    else
+        print_error "DataProtectionApplication poc-dpa deployment failed"
+        return 1
+    fi
 }
 
 # =============================================================================
@@ -804,8 +828,14 @@ step_vm_namespace() {
     if oc get namespace "$VM_NS" &>/dev/null; then
         print_ok "Namespace $VM_NS already exists — skipping"
     else
+        print_info "Namespace $VM_NS creating..."
         oc new-project "$VM_NS" > /dev/null
-        print_ok "Namespace $VM_NS created successfully"
+        if oc get namespace "$VM_NS" &>/dev/null; then
+            print_ok "Namespace $VM_NS created"
+        else
+            print_error "Namespace $VM_NS creation failed"
+            return 1
+        fi
     fi
 }
 
@@ -829,8 +859,14 @@ step_vm() {
     oc process -n openshift poc -p NAME="poc-oadp-vm" | \
         sed 's/  running: false/  runStrategy: Always/' > "${vm_yaml}"
     echo "Generated file: ${vm_yaml}"
+    print_info "VM poc-oadp-vm creating..."
     confirm_and_apply "${vm_yaml}"
-    print_ok "VM poc-oadp-vm created successfully → ns: ${VM_NS}"
+    if wait_for_resource vm poc-oadp-vm "$VM_NS"; then
+        print_ok "VM poc-oadp-vm created → ns: ${VM_NS}"
+    else
+        print_error "VM poc-oadp-vm creation failed"
+        return 1
+    fi
     print_info "  Check VM status: oc get vm -n ${VM_NS}"
 }
 
@@ -862,8 +898,14 @@ spec:
   ttl: 720h0m0s
   snapshotVolumes: true
 EOF
+        print_info "Backup poc-oadp-backup creating..."
         confirm_and_apply poc-oadp-backup.yaml
-        print_ok "Backup poc-oadp-backup created successfully → ns: ${NS}"
+        if wait_for_resource backup poc-oadp-backup "$NS"; then
+            print_ok "Backup poc-oadp-backup created → ns: ${NS}"
+        else
+            print_error "Backup poc-oadp-backup creation failed"
+            return 1
+        fi
     fi
 
     # Generate Restore YAML (not applied)
@@ -934,8 +976,9 @@ spec:
               key: cloud
               name: cloud-credentials
 EOF
+    print_info "ConsoleYAMLSample poc-dataprotectionapplication registering..."
     oc apply -f consoleyamlsample-dpa.yaml
-    print_ok "ConsoleYAMLSample poc-dataprotectionapplication registered successfully"
+    print_ok "ConsoleYAMLSample poc-dataprotectionapplication registered"
 
     cat > consoleyamlsample-backup.yaml <<EOF
 apiVersion: console.openshift.io/v1
@@ -961,8 +1004,9 @@ spec:
       ttl: 720h0m0s
       snapshotVolumes: true
 EOF
+    print_info "ConsoleYAMLSample poc-backup registering..."
     oc apply -f consoleyamlsample-backup.yaml
-    print_ok "ConsoleYAMLSample poc-backup registered successfully"
+    print_ok "ConsoleYAMLSample poc-backup registered"
 
     cat > consoleyamlsample-restore.yaml <<EOF
 apiVersion: console.openshift.io/v1
@@ -987,8 +1031,9 @@ spec:
         - poc-oadp
       restorePVs: true
 EOF
+    print_info "ConsoleYAMLSample poc-restore registering..."
     oc apply -f consoleyamlsample-restore.yaml
-    print_ok "ConsoleYAMLSample poc-restore registered successfully"
+    print_ok "ConsoleYAMLSample poc-restore registered"
 }
 
 print_summary() {

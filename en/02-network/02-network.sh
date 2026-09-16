@@ -256,10 +256,16 @@ kind: NMState
 metadata:
   name: nmstate
 NMEOF
+        print_info "Creating NMState CR..."
         oc apply -f nmstate-cr.yaml
         print_info "Waiting for NMState handler to be ready (up to 60s)..."
         oc rollout status daemonset/nmstate-handler -n openshift-nmstate --timeout=60s 2>/dev/null || true
-        print_ok "NMState CR created"
+        if oc get nmstate nmstate &>/dev/null; then
+            print_ok "NMState CR created"
+        else
+            print_error "NMState CR creation failed"
+            return 1
+        fi
     else
         print_ok "NMState CR confirmed"
     fi
@@ -748,7 +754,9 @@ spec:
     }
 EOF
     echo "Generated file: nad-${NAD_NAME}.yaml"
+    print_info "Registering NAD ${NAD_NAME}..."
     oc apply -f nad-${NAD_NAME}.yaml
+    oc get net-attach-def ${NAD_NAME} -n ${NAD_NAMESPACE} &>/dev/null
     print_ok "NAD ${NAD_NAME} registered"
 }
 
@@ -778,7 +786,9 @@ spec:
     }
 EOF
     echo "Generated file: nad-${NAD_NAME}.yaml"
+    print_info "Registering NAD ${NAD_NAME}..."
     oc apply -f nad-${NAD_NAME}.yaml
+    oc get net-attach-def ${NAD_NAME} -n ${NAD_NAMESPACE} &>/dev/null
     print_ok "NAD ${NAD_NAME} registered (VLAN ${VLAN_ID})"
 }
 
@@ -810,6 +820,7 @@ _deploy_nad_to_poc_namespaces() {
     for ns in $poc_namespaces; do
         sed "s|namespace: ${NAD_NAMESPACE}|namespace: ${ns}|g" \
             "$nad_file" | oc apply -f -
+        oc get net-attach-def ${NAD_NAME} -n ${ns} &>/dev/null
         print_ok "  NAD ${NAD_NAME} → ${ns}"
     done
 }
@@ -837,7 +848,9 @@ spec:
     }
 EOF
     echo "Generated file: nad-${NAD_NAME}.yaml"
+    print_info "Registering NAD ${NAD_NAME}..."
     oc apply -f nad-${NAD_NAME}.yaml
+    oc get net-attach-def ${NAD_NAME} -n ${NAD_NAMESPACE} &>/dev/null
     print_ok "NAD ${NAD_NAME} registered (localnet: ${LOCALNET_NAME})"
 }
 
@@ -873,7 +886,9 @@ spec:
     }
 EOF
     echo "Generated file: nad-${NAD_NAME}.yaml"
+    print_info "Registering NAD ${NAD_NAME}..."
     oc apply -f nad-${NAD_NAME}.yaml
+    oc get net-attach-def ${NAD_NAME} -n ${NAD_NAMESPACE} &>/dev/null
     if [ "${NNCP_BRIDGE_HAS_VLAN:-}" = "true" ]; then
         print_ok "NAD ${NAD_NAME} registered (localnet: ${LOCALNET_NAME}, VLAN handled by NNCP)"
     else
@@ -931,7 +946,9 @@ step_vm() {
         oc process -n openshift poc -p NAME="$VM_NAME" | \
             sed 's/runStrategy: Always/runStrategy: Halted/' | sed 's/  running: false/  runStrategy: Halted/' > "${vm_yaml}"
         echo "Generated file: ${vm_yaml}"
+        print_info "Creating VM ${VM_NAME}..."
         oc apply -n "$NAD_NAMESPACE" -f "${vm_yaml}"
+        oc get vm ${VM_NAME} -n ${NAD_NAMESPACE} &>/dev/null
 
         ensure_runstrategy "$VM_NAME" "$NAD_NAMESPACE"
 
@@ -1164,7 +1181,9 @@ spec:
 ${nncp_yaml}
 EOF
     echo "Generated file: consoleyamlsample-nncp.yaml"
+    print_info "Registering ConsoleYAMLSample ${NNCP_NAME}..."
     oc apply -f consoleyamlsample-nncp.yaml
+    oc get consoleyamlsample ${NNCP_NAME} &>/dev/null
     print_ok "ConsoleYAMLSample ${NNCP_NAME} registered"
 
     # NAD sample — generate config block per method
@@ -1242,7 +1261,9 @@ spec:
 ${nad_config_block}
 EOF
     echo "Generated file: consoleyamlsample-nad.yaml"
+    print_info "Registering ConsoleYAMLSample ${NAD_NAME}..."
     oc apply -f consoleyamlsample-nad.yaml
+    oc get consoleyamlsample ${NAD_NAME} &>/dev/null
     print_ok "ConsoleYAMLSample ${NAD_NAME} registered"
 }
 

@@ -146,8 +146,14 @@ preflight() {
     if oc get namespace "$NS" &>/dev/null; then
         print_ok "Namespace $NS 이미 존재합니다 — 건너뜀"
     else
+        print_info "Namespace $NS 생성 중..."
         oc new-project "$NS" > /dev/null
-        print_ok "Namespace $NS 생성됨"
+        if oc get namespace "$NS" &>/dev/null; then
+            print_ok "Namespace $NS 생성됨"
+        else
+            print_error "Namespace $NS 생성 실패"
+            return 1
+        fi
     fi
 
     if [ "${VIRT_INSTALLED:-false}" != "true" ]; then
@@ -179,6 +185,7 @@ step_vm() {
     else
         oc process -n openshift poc -p NAME="$VM_NAME" > "${VM_NAME}.yaml"
         echo "생성된 파일: ${VM_NAME}.yaml"
+        print_info "VM $VM_NAME 생성 중..."
         oc apply -n "$NS" -f "${VM_NAME}.yaml"
         print_ok "VM $VM_NAME 생성됨"
     fi
@@ -226,6 +233,7 @@ spec:
       protocol: TCP
 EOF
     echo "생성된 파일: vm-ne-svc.yaml"
+    print_info "node-exporter-service 적용 중..."
     oc apply -f ./vm-ne-svc.yaml
     print_ok "node-exporter-service 적용됨"
 }
@@ -258,6 +266,7 @@ spec:
           targetLabel: instance
 EOF
     echo "생성된 파일: servicemonitor-node-exporter.yaml"
+    print_info "ServiceMonitor node-exporter-monitor 등록 중..."
     oc apply -f servicemonitor-node-exporter.yaml
     print_ok "ServiceMonitor node-exporter-monitor 등록됨"
 }
@@ -300,6 +309,7 @@ spec:
             - sourceLabels: [__address__]
               targetLabel: instance
 EOF
+    print_info "ConsoleYAMLSample poc-servicemonitor-node-exporter 등록 중..."
     oc apply -f consoleyamlsample-servicemonitor.yaml
     print_ok "ConsoleYAMLSample poc-servicemonitor-node-exporter 등록됨"
 }

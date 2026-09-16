@@ -222,7 +222,9 @@ step_namespace() {
     if oc get namespace "${VM_NS}" &>/dev/null; then
         print_ok "Namespace ${VM_NS} 이미 존재합니다 — 건너뜀"
     else
+        print_info "Namespace ${VM_NS} 생성 중..."
         oc new-project "${VM_NS}" > /dev/null
+        oc get namespace "${VM_NS}" &>/dev/null
         print_ok "Namespace ${VM_NS} 생성됨"
     fi
 }
@@ -320,7 +322,9 @@ spec:
 EOF
     fi
     echo "생성된 파일: ${nad_file}"
+    print_info "NAD ${NAD_NAME} 생성 중..."
     oc apply -f "$nad_file"
+    oc get net-attach-def "${NAD_NAME}" -n "${VM_NS}" &>/dev/null
     print_ok "NAD ${NAD_NAME} 등록됨 (namespace: ${VM_NS})"
 }
 
@@ -347,7 +351,9 @@ step_vm() {
         sed 's/runStrategy: Always/runStrategy: Halted/' | \
         sed 's/  running: false/  runStrategy: Halted/' > "${vm_yaml}"
     echo "생성된 파일: ${vm_yaml}"
+    print_info "VM ${VM_NAME} 생성 중..."
     oc apply -n "$VM_NS" -f "${vm_yaml}"
+    oc get vm "${VM_NAME}" -n "${VM_NS}" &>/dev/null
 
     ensure_runstrategy "$VM_NAME" "$VM_NS"
 
@@ -483,7 +489,9 @@ spec:
                   storage: 30Gi
 EOF
     echo "생성된 파일: consoleyamlsample-virtualmachine.yaml"
+    print_info "ConsoleYAMLSample poc-virtualmachine 생성 중..."
     oc apply -f consoleyamlsample-virtualmachine.yaml
+    oc get consoleyamlsample poc-virtualmachine &>/dev/null
     print_ok "ConsoleYAMLSample poc-virtualmachine 등록됨"
 }
 

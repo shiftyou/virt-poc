@@ -146,8 +146,14 @@ preflight() {
     if oc get namespace "$NS" &>/dev/null; then
         print_ok "Namespace $NS already exists — skipping"
     else
+        print_info "Namespace $NS creating..."
         oc new-project "$NS" > /dev/null
-        print_ok "Namespace $NS created"
+        if oc get namespace "$NS" &>/dev/null; then
+            print_ok "Namespace $NS created"
+        else
+            print_error "Namespace $NS creation failed"
+            return 1
+        fi
     fi
 
     if [ "${VIRT_INSTALLED:-false}" != "true" ]; then
@@ -179,6 +185,7 @@ step_vm() {
     else
         oc process -n openshift poc -p NAME="$VM_NAME" > "${VM_NAME}.yaml"
         echo "Generated file: ${VM_NAME}.yaml"
+        print_info "VM $VM_NAME creating..."
         oc apply -n "$NS" -f "${VM_NAME}.yaml"
         print_ok "VM $VM_NAME created"
     fi
@@ -226,6 +233,7 @@ spec:
       protocol: TCP
 EOF
     echo "Generated file: vm-ne-svc.yaml"
+    print_info "node-exporter-service applying..."
     oc apply -f ./vm-ne-svc.yaml
     print_ok "node-exporter-service applied"
 }
@@ -258,6 +266,7 @@ spec:
           targetLabel: instance
 EOF
     echo "Generated file: servicemonitor-node-exporter.yaml"
+    print_info "ServiceMonitor node-exporter-monitor registering..."
     oc apply -f servicemonitor-node-exporter.yaml
     print_ok "ServiceMonitor node-exporter-monitor registered"
 }
@@ -300,6 +309,7 @@ spec:
             - sourceLabels: [__address__]
               targetLabel: instance
 EOF
+    print_info "ConsoleYAMLSample poc-servicemonitor-node-exporter registering..."
     oc apply -f consoleyamlsample-servicemonitor.yaml
     print_ok "ConsoleYAMLSample poc-servicemonitor-node-exporter registered"
 }

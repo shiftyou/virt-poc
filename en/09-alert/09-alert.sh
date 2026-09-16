@@ -161,8 +161,14 @@ step_namespace() {
     if oc get namespace "$NS" &>/dev/null; then
         print_ok "Namespace $NS already exists — skipping"
     else
+        print_info "Namespace $NS creating..."
         oc new-project "$NS" > /dev/null
-        print_ok "Namespace $NS created"
+        if oc get namespace "$NS" &>/dev/null; then
+            print_ok "Namespace $NS created"
+        else
+            print_error "Namespace $NS creation failed"
+            exit 1
+        fi
     fi
 }
 
@@ -189,6 +195,7 @@ data:
   config.yaml: |
     enableUserWorkload: true
 EOF
+    print_info "User Workload Monitoring enabling..."
     oc apply -f cluster-monitoring-config.yaml
     print_ok "User Workload Monitoring enabled"
 
@@ -288,6 +295,7 @@ spec:
             summary: "VM memory is running low"
             description: "Available memory for VM {{ \$labels.name }} (namespace: {{ \$labels.namespace }}) is {{ \$value | humanize }}."
 EOF
+    print_info "PrometheusRule poc-vm-alerts deploying..."
     oc apply -f poc-vm-alerts.yaml
     print_ok "PrometheusRule poc-vm-alerts deployed"
 }
@@ -359,6 +367,7 @@ spec:
                 summary: "VM Live Migration has failed"
                 description: "Live Migration of VM {{ $labels.vmi }} has failed."
 EOF
+    print_info "ConsoleYAMLSample poc-prometheusrule-vm-alerts registering..."
     oc apply -f consoleyamlsample-prometheusrule.yaml
     print_ok "ConsoleYAMLSample poc-prometheusrule-vm-alerts registered"
 }
@@ -379,6 +388,7 @@ step_vm() {
     if oc get vm "$VM_NAME" -n "$NS" &>/dev/null; then
         print_ok "VM $VM_NAME already exists — skipping"
     else
+        print_info "VM $VM_NAME creating..."
         oc process -n openshift poc -p NAME="$VM_NAME" | \
             sed 's/runStrategy: Always/runStrategy: Halted/' | sed 's/  running: false/  runStrategy: Halted/' | \
             oc apply -n "$NS" -f -

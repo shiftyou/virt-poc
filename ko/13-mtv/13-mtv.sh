@@ -154,8 +154,14 @@ step_namespace() {
     if oc get namespace "$NS" &>/dev/null; then
         print_ok "Namespace $NS 이미 존재합니다 — 건너뜀"
     else
+        print_info "Namespace $NS 생성 중..."
         oc new-project "$NS" > /dev/null
-        print_ok "Namespace $NS 성공적으로 생성됨"
+        if oc get namespace "$NS" &>/dev/null; then
+            print_ok "Namespace $NS 생성됨"
+        else
+            print_error "Namespace $NS 생성 실패"
+            return 1
+        fi
     fi
 }
 

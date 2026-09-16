@@ -299,8 +299,14 @@ spec:
 EOF
 
     echo "Generated file: ${app_file}"
+    print_info "Creating ArgoCD Application '${app_name}'..."
     oc apply -f "$app_file"
-    print_ok "ArgoCD Application '${app_name}' created"
+    if oc get application "${app_name}" -n "$ARGOCD_NS" &>/dev/null; then
+        print_ok "ArgoCD Application '${app_name}' created"
+    else
+        print_error "Failed to create ArgoCD Application '${app_name}'"
+        return 1
+    fi
 
     local argocd_host
     argocd_host=$(oc get route openshift-gitops-server -n "$ARGOCD_NS" \
@@ -366,8 +372,15 @@ cleanup() {
 
     print_step "--cleanup: Remove gitops-${ns_arg} resources"
 
+    print_info "Deleting ArgoCD Application gitops-${ns_arg}..."
     oc delete application "gitops-${ns_arg}" -n "$ARGOCD_NS" \
         --ignore-not-found 2>/dev/null || true
+    if ! oc get application "gitops-${ns_arg}" -n "$ARGOCD_NS" &>/dev/null; then
+        print_ok "ArgoCD Application gitops-${ns_arg} deleted"
+    else
+        print_warn "Failed to delete ArgoCD Application gitops-${ns_arg}"
+    fi
+
     oc label namespace "$ns_arg" argocd.argoproj.io/managed-by- \
         2>/dev/null || true
     rm -f "${SCRIPT_DIR}/argocd-app-${ns_arg}.yaml"
@@ -380,7 +393,7 @@ cleanup() {
         fi
     fi
 
-    print_ok "GitOps resources removed (namespace: ${ns_arg})"
+    print_ok "GitOps resources cleanup complete (namespace: ${ns_arg})"
 }
 
 # =============================================================================

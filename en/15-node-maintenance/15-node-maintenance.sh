@@ -210,8 +210,14 @@ step_namespace() {
     if oc get namespace "$NS" &>/dev/null; then
         print_ok "Namespace $NS already exists — skipping"
     else
+        print_info "Creating Namespace $NS..."
         oc new-project "$NS" > /dev/null
-        print_ok "Namespace $NS created successfully"
+        if oc get namespace "$NS" &>/dev/null; then
+            print_ok "Namespace $NS created"
+        else
+            print_error "Failed to create Namespace $NS"
+            return 1
+        fi
     fi
 }
 
@@ -244,8 +250,9 @@ step_vms() {
           }
         }'
 
+        print_info "Deploying VM $VM..."
         virtctl start "$VM" -n "$NS" 2>/dev/null || true
-        print_ok "VM $VM deployed successfully"
+        print_ok "VM $VM deployed"
     done
 
     # Wait for Running state
@@ -339,8 +346,14 @@ spec:
       nodeName: worker-0
       reason: "POC maintenance lab"
 EOF
+    print_info "Registering ConsoleYAMLSample poc-nodemaintenance..."
     oc apply -f consoleyamlsample-nodemaintenance.yaml
-    print_ok "ConsoleYAMLSample poc-nodemaintenance registered successfully"
+    if oc get consoleyamlsample poc-nodemaintenance &>/dev/null; then
+        print_ok "ConsoleYAMLSample poc-nodemaintenance registered"
+    else
+        print_error "Failed to register ConsoleYAMLSample poc-nodemaintenance"
+        return 1
+    fi
 }
 
 step_maintenance() {
@@ -393,9 +406,22 @@ print_summary() {
 # =============================================================================
 cleanup() {
     print_step "--cleanup: Delete 15-node-maintenance resources"
+
+    print_info "Deleting Project poc-maintenance..."
     oc delete project poc-maintenance --ignore-not-found 2>/dev/null || true
+    if ! oc get namespace poc-maintenance &>/dev/null; then
+        print_ok "Project poc-maintenance deleted"
+    else
+        print_warn "Project poc-maintenance still deleting (background)"
+    fi
+
+    print_info "Deleting ConsoleYAMLSample poc-nodemaintenance..."
     oc delete consoleyamlsample poc-nodemaintenance --ignore-not-found 2>/dev/null || true
-    print_ok "15-node-maintenance resources deleted successfully"
+    if ! oc get consoleyamlsample poc-nodemaintenance &>/dev/null; then
+        print_ok "ConsoleYAMLSample poc-nodemaintenance deleted"
+    else
+        print_warn "Failed to delete ConsoleYAMLSample poc-nodemaintenance"
+    fi
 }
 
 # =============================================================================

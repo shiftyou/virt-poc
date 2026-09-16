@@ -194,8 +194,14 @@ step_namespace() {
     if oc get namespace "$NS" &>/dev/null; then
         print_ok "Namespace $NS already exists — skipping"
     else
+        print_info "Creating Namespace $NS..."
         oc new-project "$NS" > /dev/null
-        print_ok "Namespace $NS created successfully"
+        if oc get namespace "$NS" &>/dev/null; then
+            print_ok "Namespace $NS created"
+        else
+            print_error "Failed to create Namespace $NS"
+            return 1
+        fi
     fi
 }
 
@@ -216,8 +222,14 @@ spec:
     spec:
       remediationStrategy: ResourceDeletion
 EOF
+    print_info "Creating SelfNodeRemediationTemplate poc-snr-template..."
     confirm_and_apply snr-template.yaml
-    print_ok "SelfNodeRemediationTemplate poc-snr-template created successfully"
+    if oc get selfnoderemediationtemplate poc-snr-template -n "$REMEDIATION_NS" &>/dev/null; then
+        print_ok "SelfNodeRemediationTemplate poc-snr-template created"
+    else
+        print_error "Failed to create SelfNodeRemediationTemplate poc-snr-template"
+        return 1
+    fi
 }
 
 # =============================================================================
@@ -250,8 +262,14 @@ spec:
       status: "Unknown"
       duration: 300s
 EOF
+    print_info "Creating NodeHealthCheck poc-snr-nhc..."
     confirm_and_apply nhc-snr.yaml
-    print_ok "NodeHealthCheck poc-snr-nhc created successfully"
+    if oc get nodehealthcheck poc-snr-nhc &>/dev/null; then
+        print_ok "NodeHealthCheck poc-snr-nhc created"
+    else
+        print_error "Failed to create NodeHealthCheck poc-snr-nhc"
+        return 1
+    fi
     print_info "  Condition: Ready=False or Unknown for 300s or more → SNR triggered"
 }
 
@@ -296,8 +314,14 @@ spec:
           status: "Unknown"
           duration: 300s
 EOF
+    print_info "Registering ConsoleYAMLSample poc-nodehealthcheck-snr..."
     oc apply -f consoleyamlsample-nhc-snr.yaml
-    print_ok "ConsoleYAMLSample poc-nodehealthcheck-snr registered successfully"
+    if oc get consoleyamlsample poc-nodehealthcheck-snr &>/dev/null; then
+        print_ok "ConsoleYAMLSample poc-nodehealthcheck-snr registered"
+    else
+        print_error "Failed to register ConsoleYAMLSample poc-nodehealthcheck-snr"
+        return 1
+    fi
 }
 
 step_vms() {
@@ -325,8 +349,9 @@ step_vms() {
           }
         }"
 
+        print_info "Deploying VM $VM..."
         virtctl start "$VM" -n "$NS" 2>/dev/null || true
-        print_ok "VM $VM deployed successfully (node: ${NODE1})"
+        print_ok "VM $VM deployed (node: ${NODE1})"
     done
 }
 
@@ -362,11 +387,38 @@ print_summary() {
 cleanup() {
     print_step "--cleanup: Delete 16-snr resources"
     local _rem_ns="openshift-workload-availability"
+
+    print_info "Deleting Project poc-snr..."
     oc delete project poc-snr --ignore-not-found 2>/dev/null || true
+    if ! oc get namespace poc-snr &>/dev/null; then
+        print_ok "Project poc-snr deleted"
+    else
+        print_warn "Project poc-snr still deleting (background)"
+    fi
+
+    print_info "Deleting NodeHealthCheck poc-snr-nhc..."
     oc delete nodehealthcheck poc-snr-nhc --ignore-not-found 2>/dev/null || true
+    if ! oc get nodehealthcheck poc-snr-nhc &>/dev/null; then
+        print_ok "NodeHealthCheck poc-snr-nhc deleted"
+    else
+        print_warn "Failed to delete NodeHealthCheck poc-snr-nhc"
+    fi
+
+    print_info "Deleting SelfNodeRemediationTemplate poc-snr-template..."
     oc delete selfnoderemediationtemplate poc-snr-template -n "$_rem_ns" --ignore-not-found 2>/dev/null || true
+    if ! oc get selfnoderemediationtemplate poc-snr-template -n "$_rem_ns" &>/dev/null; then
+        print_ok "SelfNodeRemediationTemplate poc-snr-template deleted"
+    else
+        print_warn "Failed to delete SelfNodeRemediationTemplate poc-snr-template"
+    fi
+
+    print_info "Deleting ConsoleYAMLSample poc-nodehealthcheck-snr..."
     oc delete consoleyamlsample poc-nodehealthcheck-snr --ignore-not-found 2>/dev/null || true
-    print_ok "16-snr resources deleted successfully"
+    if ! oc get consoleyamlsample poc-nodehealthcheck-snr &>/dev/null; then
+        print_ok "ConsoleYAMLSample poc-nodehealthcheck-snr deleted"
+    else
+        print_warn "Failed to delete ConsoleYAMLSample poc-nodehealthcheck-snr"
+    fi
 }
 
 # =============================================================================

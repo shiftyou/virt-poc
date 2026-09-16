@@ -204,8 +204,14 @@ step_namespace() {
     if oc get namespace "$NS" &>/dev/null; then
         print_ok "Namespace ${NS}이(가) 이미 존재합니다 — 건너뜀"
     else
+        print_info "Namespace $NS 생성 중..."
         oc new-project "$NS" > /dev/null
-        print_ok "Namespace $NS 생성 완료"
+        if oc get namespace "$NS" &>/dev/null; then
+            print_ok "Namespace $NS 생성됨"
+        else
+            print_error "Namespace $NS 생성 실패"
+            return 1
+        fi
     fi
 }
 
@@ -229,8 +235,14 @@ metadata:
 stringData:
   --password: "${FENCE_AGENT_PASS:-password}"
 EOF
+    print_info "Secret poc-far-credentials 생성 중..."
     confirm_and_apply far-credentials-secret.yaml
-    print_ok "Secret poc-far-credentials 생성 완료 → ns: ${REMEDIATION_NS}"
+    if oc get secret poc-far-credentials -n "${REMEDIATION_NS}" &>/dev/null; then
+        print_ok "Secret poc-far-credentials 생성됨 → ns: ${REMEDIATION_NS}"
+    else
+        print_error "Secret poc-far-credentials 생성 실패"
+        return 1
+    fi
 }
 
 # =============================================================================
@@ -287,8 +299,14 @@ EOF
       timeout: 1m0s
 EOF
 
+    print_info "FenceAgentsRemediationTemplate poc-far-template 생성 중..."
     confirm_and_apply far-template.yaml
-    print_ok "FenceAgentsRemediationTemplate poc-far-template 생성 완료"
+    if oc get fenceagentsremediationtemplate poc-far-template -n "$REMEDIATION_NS" &>/dev/null; then
+        print_ok "FenceAgentsRemediationTemplate poc-far-template 생성됨"
+    else
+        print_error "FenceAgentsRemediationTemplate poc-far-template 생성 실패"
+        return 1
+    fi
     print_info "  agent           : fence_ipmilan"
     print_info "  sharedSecretName: poc-far-credentials (--password 포함)"
     print_info "  BMC IP          : ${FENCE_AGENT_IP:-192.168.1.100}"
@@ -324,8 +342,14 @@ spec:
       status: Unknown
       duration: 300s
 EOF
+    print_info "NodeHealthCheck poc-far-nhc 생성 중..."
     confirm_and_apply nhc-far.yaml
-    print_ok "NodeHealthCheck poc-far-nhc 생성 완료"
+    if oc get nodehealthcheck poc-far-nhc &>/dev/null; then
+        print_ok "NodeHealthCheck poc-far-nhc 생성됨"
+    else
+        print_error "NodeHealthCheck poc-far-nhc 생성 실패"
+        return 1
+    fi
     print_info "  조건: Ready=False 또는 Unknown이 300초 이상 지속 → FAR 트리거 (IPMI reboot)"
 }
 
@@ -370,8 +394,14 @@ spec:
           status: Unknown
           duration: 300s
 EOF
+    print_info "ConsoleYAMLSample poc-nodehealthcheck-far 등록 중..."
     oc apply -f consoleyamlsample-nhc-far.yaml
-    print_ok "ConsoleYAMLSample poc-nodehealthcheck-far 등록 완료"
+    if oc get consoleyamlsample poc-nodehealthcheck-far &>/dev/null; then
+        print_ok "ConsoleYAMLSample poc-nodehealthcheck-far 등록됨"
+    else
+        print_error "ConsoleYAMLSample poc-nodehealthcheck-far 등록 실패"
+        return 1
+    fi
 
     cat > consoleyamlsample-far-template.yaml <<'EOF'
 apiVersion: console.openshift.io/v1
@@ -410,8 +440,14 @@ spec:
             --username: admin
           timeout: 1m0s
 EOF
+    print_info "ConsoleYAMLSample poc-fenceagentsremediationtemplate 등록 중..."
     oc apply -f consoleyamlsample-far-template.yaml
-    print_ok "ConsoleYAMLSample poc-fenceagentsremediationtemplate 등록 완료"
+    if oc get consoleyamlsample poc-fenceagentsremediationtemplate &>/dev/null; then
+        print_ok "ConsoleYAMLSample poc-fenceagentsremediationtemplate 등록됨"
+    else
+        print_error "ConsoleYAMLSample poc-fenceagentsremediationtemplate 등록 실패"
+        return 1
+    fi
 }
 
 print_summary() {
@@ -443,12 +479,47 @@ print_summary() {
 cleanup() {
     print_step "--cleanup: 17-far 리소스 삭제"
     local _rem_ns="openshift-workload-availability"
+
+    print_info "Project poc-far 삭제 중..."
     oc delete project poc-far --ignore-not-found 2>/dev/null || true
+    if ! oc get namespace poc-far &>/dev/null; then
+        print_ok "Project poc-far 삭제됨"
+    else
+        print_warn "Project poc-far 삭제 진행 중 (백그라운드)"
+    fi
+
+    print_info "NodeHealthCheck poc-far-nhc 삭제 중..."
     oc delete nodehealthcheck poc-far-nhc --ignore-not-found 2>/dev/null || true
+    if ! oc get nodehealthcheck poc-far-nhc &>/dev/null; then
+        print_ok "NodeHealthCheck poc-far-nhc 삭제됨"
+    else
+        print_warn "NodeHealthCheck poc-far-nhc 삭제 실패"
+    fi
+
+    print_info "FenceAgentsRemediationTemplate poc-far-template 삭제 중..."
     oc delete fenceagentsremediationtemplate poc-far-template -n "$_rem_ns" --ignore-not-found 2>/dev/null || true
+    if ! oc get fenceagentsremediationtemplate poc-far-template -n "$_rem_ns" &>/dev/null; then
+        print_ok "FenceAgentsRemediationTemplate poc-far-template 삭제됨"
+    else
+        print_warn "FenceAgentsRemediationTemplate poc-far-template 삭제 실패"
+    fi
+
+    print_info "Secret poc-far-credentials 삭제 중..."
     oc delete secret poc-far-credentials -n "$_rem_ns" --ignore-not-found 2>/dev/null || true
+    if ! oc get secret poc-far-credentials -n "$_rem_ns" &>/dev/null; then
+        print_ok "Secret poc-far-credentials 삭제됨"
+    else
+        print_warn "Secret poc-far-credentials 삭제 실패"
+    fi
+
+    print_info "ConsoleYAMLSample 삭제 중..."
     oc delete consoleyamlsample poc-nodehealthcheck-far poc-fenceagentsremediationtemplate --ignore-not-found 2>/dev/null || true
-    print_ok "17-far 리소스 삭제 완료"
+    if ! oc get consoleyamlsample poc-nodehealthcheck-far &>/dev/null && \
+       ! oc get consoleyamlsample poc-fenceagentsremediationtemplate &>/dev/null; then
+        print_ok "ConsoleYAMLSample 삭제됨"
+    else
+        print_warn "ConsoleYAMLSample 삭제 실패"
+    fi
 }
 
 # =============================================================================

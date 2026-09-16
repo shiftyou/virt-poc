@@ -184,8 +184,14 @@ step_namespace() {
     if oc get namespace "$NS" &>/dev/null; then
         print_ok "Namespace $NS 이미 존재합니다 — 건너뜀"
     else
+        print_info "Namespace $NS 생성 중..."
         oc new-project "$NS" > /dev/null
-        print_ok "Namespace $NS 생성됨"
+        if oc get namespace "$NS" &>/dev/null; then
+            print_ok "Namespace $NS 생성됨"
+        else
+            print_error "Namespace $NS 생성 실패"
+            exit 1
+        fi
     fi
 }
 
@@ -201,6 +207,7 @@ step_vm() {
     fi
 
     # poc 템플릿에서 VM 생성
+    print_info "VM $VM_NAME 생성 중..."
     oc process -n openshift poc -p NAME="$VM_NAME" | \
         sed 's/runStrategy: Always/runStrategy: Halted/' | sed 's/  running: false/  runStrategy: Halted/' > "${VM_NAME}.yaml"
     echo "생성된 파일: ${VM_NAME}.yaml"
@@ -210,6 +217,7 @@ step_vm() {
     # HTTP Liveness Probe (포트 80) 패치
     # spec.template.spec.readinessProbe / livenessProbe → KubeVirt VMI 레벨에서 지원
     ensure_runstrategy "$VM_NAME" "$NS"
+    print_info "Liveness/Readiness Probe 구성 중..."
     oc patch vm "$VM_NAME" -n "$NS" --type=merge -p '{
       "spec": {
         "template": {
@@ -317,6 +325,7 @@ spec:
               name: poc
               namespace: openshift-virtualization-os-images
 EOF
+    print_info "ConsoleYAMLSample poc-liveness-vm 등록 중..."
     oc apply -f consoleyamlsample-liveness-vm.yaml
     print_ok "ConsoleYAMLSample poc-liveness-vm 등록됨"
 }

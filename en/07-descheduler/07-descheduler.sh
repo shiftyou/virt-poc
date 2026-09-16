@@ -207,8 +207,14 @@ step_namespace() {
     if oc get namespace "$NS" &>/dev/null; then
         print_ok "Namespace $NS already exists — skipping"
     else
+        print_info "Namespace $NS creating..."
         oc new-project "$NS" > /dev/null
-        print_ok "Namespace $NS created"
+        if oc get namespace "$NS" &>/dev/null; then
+            print_ok "Namespace $NS created"
+        else
+            print_error "Namespace $NS creation failed"
+            exit 1
+        fi
     fi
 }
 
@@ -226,6 +232,7 @@ step_vms() {
         fi
 
         # Create VM from poc template
+        print_info "VM $VM creating..."
         oc process -n openshift poc -p NAME="$VM" | \
         sed 's/runStrategy: Halted/runStrategy: Always/' > "${VM}.yaml"
         echo "Generated file: ${VM}.yaml"
@@ -345,6 +352,7 @@ spec:
         - poc-descheduler
 EOF
     echo "Generated file: kubedescheduler.yaml"
+    print_info "KubeDescheduler cluster creating..."
     if ! oc apply -f kubedescheduler.yaml; then
         print_error "KubeDescheduler apply failed"
         exit 1
@@ -544,6 +552,7 @@ spec:
             - ${NS}    # Change to target namespace
 EOF
     echo "Generated file: consoleyamlsample-kubedescheduler.yaml"
+    print_info "ConsoleYAMLSample poc-kubedescheduler registering..."
     oc apply -f consoleyamlsample-kubedescheduler.yaml
     print_ok "ConsoleYAMLSample poc-kubedescheduler registered"
 }

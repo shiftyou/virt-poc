@@ -346,8 +346,14 @@ spec:
     profile: ${AUDIT_PROFILE}
 EOF
 
+    print_info "Applying Audit Policy..."
     confirm_and_apply ./audit-policy.yaml false
-    print_ok "Audit Policy applied successfully"
+    if oc get apiserver cluster &>/dev/null; then
+        print_ok "Audit Policy applied"
+    else
+        print_error "Failed to apply Audit Policy"
+        return 1
+    fi
     print_info "kube-apiserver rollout may take several minutes."
     print_info "  Check: oc get co kube-apiserver"
 }
@@ -417,8 +423,14 @@ ${log_store_block}
     type: vector
 EOF
 
+    print_info "Creating ClusterLogging '${CL_NAME}'..."
     confirm_and_apply ./cluster-logging.yaml false
-    print_ok "ClusterLogging '${CL_NAME}' created successfully"
+    if oc get clusterlogging "${CL_NAME}" -n "${LOGGING_NS}" &>/dev/null; then
+        print_ok "ClusterLogging '${CL_NAME}' created"
+    else
+        print_error "Failed to create ClusterLogging '${CL_NAME}'"
+        return 1
+    fi
 }
 
 # =============================================================================
@@ -450,8 +462,14 @@ spec:
   storageClassName: ${_obc_sc}
 EOF
         echo "Generated file: obc-loki.yaml"
+        print_info "Creating OBC obc-loki..."
         oc apply -f ./obc-loki.yaml
-        print_ok "OBC obc-loki created successfully"
+        if oc get obc obc-loki -n "${LOGGING_NS}" &>/dev/null; then
+            print_ok "OBC obc-loki created"
+        else
+            print_error "Failed to create OBC obc-loki"
+            return 1
+        fi
     fi
 
     # Wait for Bound
@@ -498,6 +516,7 @@ step_loki_secret() {
         exit 1
     fi
 
+    print_info "Creating S3 Secret 'logging-loki-s3'..."
     oc create secret generic logging-loki-s3 \
         -n "${LOGGING_NS}" \
         --from-literal=access_key_id="${S3_ACCESS_KEY}" \
@@ -505,7 +524,12 @@ step_loki_secret() {
         --from-literal=bucketnames="${S3_BUCKET}" \
         --from-literal=endpoint="${S3_ENDPOINT}" \
         --from-literal=region="${S3_REGION}"
-    print_ok "S3 Secret 'logging-loki-s3' created successfully"
+    if oc get secret logging-loki-s3 -n "${LOGGING_NS}" &>/dev/null; then
+        print_ok "S3 Secret 'logging-loki-s3' created"
+    else
+        print_error "Failed to create S3 Secret 'logging-loki-s3'"
+        return 1
+    fi
     print_info "  endpoint : ${S3_ENDPOINT}"
     print_info "  bucket   : ${S3_BUCKET}"
 }
@@ -541,6 +565,7 @@ spec:
     mode: openshift-logging
 EOF
 
+    print_info "Creating LokiStack '${LOKI_NAME}'..."
     confirm_and_apply ./loki-stack.yaml false
 
     # Reduce resources for POC environment (LokiStack CRD does not support resource override → patch StatefulSet directly)
@@ -700,8 +725,14 @@ ${output_section}
 EOF
     fi
 
+    print_info "Applying ClusterLogForwarder '${CLF_NAME}'..."
     confirm_and_apply ./cluster-log-forwarder.yaml false
-    print_ok "ClusterLogForwarder '${CLF_NAME}' applied successfully"
+    if oc get clusterlogforwarder "${CLF_NAME}" -n "${LOGGING_NS}" &>/dev/null; then
+        print_ok "ClusterLogForwarder '${CLF_NAME}' applied"
+    else
+        print_error "Failed to apply ClusterLogForwarder '${CLF_NAME}'"
+        return 1
+    fi
 }
 
 # =============================================================================
@@ -735,8 +766,14 @@ spec:
       name: ${LOKI_NAME}
       namespace: ${LOGGING_NS}
 EOF
+        print_info "Creating UIPlugin 'logging'..."
         oc apply -f ./uiplugin-logging.yaml
-        print_ok "UIPlugin 'logging' created successfully"
+        if oc get uiplugin logging &>/dev/null; then
+            print_ok "UIPlugin 'logging' created"
+        else
+            print_error "Failed to create UIPlugin 'logging'"
+            return 1
+        fi
         print_info "  The Observe > Logs menu will appear after reloading the Console."
     else
         # v5: consoleplugin method — append to existing plugins list (do not overwrite)
@@ -761,9 +798,10 @@ EOF
             oc patch console.operator.openshift.io cluster --type=merge \
                 -p '{"spec":{"plugins":[]}}' 2>/dev/null || true
         fi
+        print_info "Enabling logging-view-plugin..."
         oc patch console.operator.openshift.io cluster --type=json \
             -p '[{"op":"add","path":"/spec/plugins/-","value":"logging-view-plugin"}]'
-        print_ok "logging-view-plugin enabled successfully"
+        print_ok "logging-view-plugin enabled"
         print_info "  The Observe > Logs menu will appear after reloading the Console."
     fi
 }
@@ -823,12 +861,43 @@ step_verify() {
 cleanup() {
     print_step "--cleanup: Delete 20-logging resources"
     local _logging_ns="openshift-logging"
+
+    print_info "Deleting ClusterLogForwarder..."
     oc delete clusterlogforwarder --all -n "$_logging_ns" --ignore-not-found 2>/dev/null || true
+    print_ok "ClusterLogForwarder deleted"
+
+    print_info "Deleting ClusterLogging instance..."
     oc delete clusterlogging instance -n "$_logging_ns" --ignore-not-found 2>/dev/null || true
+    if ! oc get clusterlogging instance -n "$_logging_ns" &>/dev/null; then
+        print_ok "ClusterLogging instance deleted"
+    else
+        print_warn "Failed to delete ClusterLogging instance"
+    fi
+
+    print_info "Deleting LokiStack logging-loki..."
     oc delete lokistack logging-loki -n "$_logging_ns" --ignore-not-found 2>/dev/null || true
+    if ! oc get lokistack logging-loki -n "$_logging_ns" &>/dev/null; then
+        print_ok "LokiStack logging-loki deleted"
+    else
+        print_warn "Failed to delete LokiStack logging-loki"
+    fi
+
+    print_info "Deleting Secret logging-loki-s3..."
     oc delete secret logging-loki-s3 -n "$_logging_ns" --ignore-not-found 2>/dev/null || true
+    if ! oc get secret logging-loki-s3 -n "$_logging_ns" &>/dev/null; then
+        print_ok "Secret logging-loki-s3 deleted"
+    else
+        print_warn "Failed to delete Secret logging-loki-s3"
+    fi
+
+    print_info "Deleting OBC obc-loki..."
     oc delete obc obc-loki -n "$_logging_ns" --ignore-not-found 2>/dev/null || true
-    print_ok "20-logging resources deleted successfully"
+    if ! oc get obc obc-loki -n "$_logging_ns" &>/dev/null; then
+        print_ok "OBC obc-loki deleted"
+    else
+        print_warn "Failed to delete OBC obc-loki"
+    fi
+
     print_info "  Namespace ${_logging_ns} is managed by Logging Operator and will not be deleted."
 }
 

@@ -247,7 +247,12 @@ EOF
             --namespace="$TARGET_NS" \
             --no-create \
             --insecure
-        print_ok "DataVolume $DV_NAME created (local upload complete)"
+        if oc get dv "$DV_NAME" -n "$TARGET_NS" &>/dev/null; then
+            print_ok "DataVolume $DV_NAME created (local upload complete)"
+        else
+            print_error "DataVolume $DV_NAME creation failed"
+            return 1
+        fi
     else
         print_info "Local file not found (${url_filename}) — using HTTP import"
         print_info "DataVolume creation URL: ${GOLDEN_IMAGE_URL}"
@@ -278,8 +283,14 @@ spec:
     volumeMode: Block
 EOF
         echo "Generated file: datavolume-poc-golden.yaml"
+        print_info "DataVolume $DV_NAME creating..."
         oc apply -f datavolume-poc-golden.yaml
-        print_ok "DataVolume $DV_NAME created (HTTP import in progress)"
+        if oc get dv "$DV_NAME" -n "$TARGET_NS" &>/dev/null; then
+            print_ok "DataVolume $DV_NAME created (HTTP import in progress)"
+        else
+            print_error "DataVolume $DV_NAME creation failed"
+            return 1
+        fi
     fi
 }
 
@@ -305,8 +316,14 @@ spec:
       namespace: ${TARGET_NS}
 EOF
     echo "Generated file: datasource-poc-golden.yaml"
+    print_info "DataSource $DS_NAME creating..."
     oc apply -f datasource-poc-golden.yaml
-    print_ok "DataSource $DS_NAME created"
+    if oc get datasource "$DS_NAME" -n "$TARGET_NS" &>/dev/null; then
+        print_ok "DataSource $DS_NAME created"
+    else
+        print_error "DataSource $DS_NAME creation failed"
+        return 1
+    fi
 
     # Wait for PVC Bound after confirming DataSource exists
     print_info "Waiting for PVC $DV_NAME to become Bound..."
@@ -467,9 +484,14 @@ EOF
 #    from: '[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}'
 
     echo "Generated file: template-poc.yaml"
+    print_info "Template $TEMPLATE_NAME registering..."
     oc apply -f template-poc.yaml
-
-    print_ok "Template $TEMPLATE_NAME registered (namespace: $TEMPLATE_NS)"
+    if oc get template "$TEMPLATE_NAME" -n "$TEMPLATE_NS" &>/dev/null; then
+        print_ok "Template $TEMPLATE_NAME registered (namespace: $TEMPLATE_NS)"
+    else
+        print_error "Template $TEMPLATE_NAME registration failed"
+        return 1
+    fi
 }
 
 # =============================================================================
@@ -502,6 +524,7 @@ spec:
           namespace: openshift-virtualization-os-images
 EOF
     echo "Generated file: consoleyamlsample-datasource.yaml"
+    print_info "ConsoleYAMLSample poc-datasource registering..."
     oc apply -f consoleyamlsample-datasource.yaml
     print_ok "ConsoleYAMLSample poc-datasource registered"
 }

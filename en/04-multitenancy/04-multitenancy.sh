@@ -215,9 +215,11 @@ step_users() {
             -n openshift-config
         print_ok "htpasswd secret updated"
     else
+        print_info "Creating htpasswd secret..."
         oc create secret generic "$HTPASSWD_SECRET" \
             --from-file=htpasswd="$HTPASSWD_TMP" \
             -n openshift-config
+        oc get secret "$HTPASSWD_SECRET" -n openshift-config &>/dev/null
         print_ok "htpasswd secret created"
     fi
     rm -f "$HTPASSWD_TMP"
@@ -251,7 +253,9 @@ step_namespaces() {
         if oc get namespace "$ns" &>/dev/null; then
             print_warn "Namespace already exists: $ns"
         else
+            print_info "Creating namespace ${ns}..."
             oc create namespace "$ns"
+            oc get namespace "$ns" &>/dev/null
             print_ok "Namespace created: ${CYAN}${ns}${NC}"
         fi
     done
@@ -268,28 +272,40 @@ step_rbac() {
     printf "  %-10s  %-30s  %-12s  %s\n" "User" "Namespace" "Role" "Create VM"
     echo "  ──────────────────────────────────────────────────────────────"
 
+    print_info "Creating RoleBinding: ${USER1} → ${NS1} [admin]..."
     oc adm policy add-role-to-user admin "$USER1" -n "$NS1" 2>/dev/null
     printf "  %-10s  %-30s  %-12s  %s\n" "$USER1" "$NS1" "admin" "Yes"
+    oc get rolebindings -n "$NS1" -o jsonpath='{.items[*].subjects[*].name}' 2>/dev/null | grep -q "$USER1"
     print_ok "${USER1} → ${NS1} [admin]  — can create VMs"
 
+    print_info "Creating RoleBinding: ${USER2} → ${NS1} [view]..."
     oc adm policy add-role-to-user view "$USER2" -n "$NS1" 2>/dev/null
     printf "  %-10s  %-30s  %-12s  %s\n" "$USER2" "$NS1" "view" "No"
+    oc get rolebindings -n "$NS1" -o jsonpath='{.items[*].subjects[*].name}' 2>/dev/null | grep -q "$USER2"
     print_ok "${USER2} → ${NS1} [view]   — read-only, cannot create VMs"
 
+    print_info "Creating RoleBinding: ${USER3} → ${NS2} [admin]..."
     oc adm policy add-role-to-user admin "$USER3" -n "$NS2" 2>/dev/null
     printf "  %-10s  %-30s  %-12s  %s\n" "$USER3" "$NS2" "admin" "Yes"
+    oc get rolebindings -n "$NS2" -o jsonpath='{.items[*].subjects[*].name}' 2>/dev/null | grep -q "$USER3"
     print_ok "${USER3} → ${NS2} [admin]  — can create VMs"
 
+    print_info "Creating RoleBinding: ${USER4} → ${NS2} [view]..."
     oc adm policy add-role-to-user view "$USER4" -n "$NS2" 2>/dev/null
     printf "  %-10s  %-30s  %-12s  %s\n" "$USER4" "$NS2" "view" "No"
+    oc get rolebindings -n "$NS2" -o jsonpath='{.items[*].subjects[*].name}' 2>/dev/null | grep -q "$USER4"
     print_ok "${USER4} → ${NS2} [view]   — read-only, cannot create VMs"
 
     # DataSource reference permissions — grant view permission only to admin users (VM creators)
     # since they use DataSource in openshift-virtualization-os-images as sourceRef when creating VMs
+    print_info "Creating RoleBinding: ${USER1} → ${DATASOURCE_NS} [view]..."
     oc adm policy add-role-to-user view "$USER1" -n "$DATASOURCE_NS" 2>/dev/null
+    oc get rolebindings -n "$DATASOURCE_NS" -o jsonpath='{.items[*].subjects[*].name}' 2>/dev/null | grep -q "$USER1"
     print_ok "${USER1} → ${DATASOURCE_NS} [view] (for DataSource reference)"
 
+    print_info "Creating RoleBinding: ${USER3} → ${DATASOURCE_NS} [view]..."
     oc adm policy add-role-to-user view "$USER3" -n "$DATASOURCE_NS" 2>/dev/null
+    oc get rolebindings -n "$DATASOURCE_NS" -o jsonpath='{.items[*].subjects[*].name}' 2>/dev/null | grep -q "$USER3"
     print_ok "${USER3} → ${DATASOURCE_NS} [view] (for DataSource reference)"
 }
 
@@ -313,7 +329,9 @@ create_vm() {
         sed 's/runStrategy: Halted/runStrategy: Always/' | \
         sed 's/  running: false/  runStrategy: Always/' > "${vm_yaml}"
     echo "Generated file: ${vm_yaml}"
+    print_info "Creating VM ${vm_name}..."
     oc apply -n "$ns" -f "${vm_yaml}"
+    oc get vm "$vm_name" -n "$ns" &>/dev/null
     virtctl start "$vm_name" -n "$ns" 2>/dev/null || true
     print_ok "VM created and started: ${CYAN}${vm_name}${NC} (namespace: ${ns})"
 }

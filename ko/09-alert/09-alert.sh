@@ -161,8 +161,14 @@ step_namespace() {
     if oc get namespace "$NS" &>/dev/null; then
         print_ok "Namespace $NS 이미 존재합니다 — 건너뜀"
     else
+        print_info "Namespace $NS 생성 중..."
         oc new-project "$NS" > /dev/null
-        print_ok "Namespace $NS 생성됨"
+        if oc get namespace "$NS" &>/dev/null; then
+            print_ok "Namespace $NS 생성됨"
+        else
+            print_error "Namespace $NS 생성 실패"
+            exit 1
+        fi
     fi
 }
 
@@ -189,6 +195,7 @@ data:
   config.yaml: |
     enableUserWorkload: true
 EOF
+    print_info "User Workload Monitoring 활성화 중..."
     oc apply -f cluster-monitoring-config.yaml
     print_ok "User Workload Monitoring 활성화됨"
 
@@ -288,6 +295,7 @@ spec:
             summary: "VM 메모리 부족"
             description: "VM {{ \$labels.name }} (namespace: {{ \$labels.namespace }})의 가용 메모리가 {{ \$value | humanize }}입니다."
 EOF
+    print_info "PrometheusRule poc-vm-alerts 배포 중..."
     oc apply -f poc-vm-alerts.yaml
     print_ok "PrometheusRule poc-vm-alerts 배포됨"
 }
@@ -359,6 +367,7 @@ spec:
                 summary: "VM Live Migration 실패"
                 description: "VM {{ $labels.vmi }}의 Live Migration이 실패했습니다."
 EOF
+    print_info "ConsoleYAMLSample poc-prometheusrule-vm-alerts 등록 중..."
     oc apply -f consoleyamlsample-prometheusrule.yaml
     print_ok "ConsoleYAMLSample poc-prometheusrule-vm-alerts 등록됨"
 }
@@ -379,6 +388,7 @@ step_vm() {
     if oc get vm "$VM_NAME" -n "$NS" &>/dev/null; then
         print_ok "VM $VM_NAME 이미 존재합니다 — 건너뜀"
     else
+        print_info "VM $VM_NAME 생성 중..."
         oc process -n openshift poc -p NAME="$VM_NAME" | \
             sed 's/runStrategy: Always/runStrategy: Halted/' | sed 's/  running: false/  runStrategy: Halted/' | \
             oc apply -n "$NS" -f -

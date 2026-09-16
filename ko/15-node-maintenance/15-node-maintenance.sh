@@ -210,8 +210,14 @@ step_namespace() {
     if oc get namespace "$NS" &>/dev/null; then
         print_ok "Namespace ${NS}이(가) 이미 존재합니다 — 건너뜀"
     else
+        print_info "Namespace $NS 생성 중..."
         oc new-project "$NS" > /dev/null
-        print_ok "Namespace $NS 생성 완료"
+        if oc get namespace "$NS" &>/dev/null; then
+            print_ok "Namespace $NS 생성 완료"
+        else
+            print_error "Namespace $NS 생성 실패"
+            return 1
+        fi
     fi
 }
 
@@ -244,6 +250,7 @@ step_vms() {
           }
         }'
 
+        print_info "VM $VM 배포 중..."
         virtctl start "$VM" -n "$NS" 2>/dev/null || true
         print_ok "VM $VM 배포 완료"
     done
@@ -339,8 +346,14 @@ spec:
       nodeName: worker-0
       reason: "POC maintenance lab"
 EOF
+    print_info "ConsoleYAMLSample poc-nodemaintenance 등록 중..."
     oc apply -f consoleyamlsample-nodemaintenance.yaml
-    print_ok "ConsoleYAMLSample poc-nodemaintenance 등록 완료"
+    if oc get consoleyamlsample poc-nodemaintenance &>/dev/null; then
+        print_ok "ConsoleYAMLSample poc-nodemaintenance 등록됨"
+    else
+        print_error "ConsoleYAMLSample poc-nodemaintenance 등록 실패"
+        return 1
+    fi
 }
 
 step_maintenance() {
@@ -393,9 +406,22 @@ print_summary() {
 # =============================================================================
 cleanup() {
     print_step "--cleanup: 15-node-maintenance 리소스 삭제"
+
+    print_info "Project poc-maintenance 삭제 중..."
     oc delete project poc-maintenance --ignore-not-found 2>/dev/null || true
+    if ! oc get namespace poc-maintenance &>/dev/null; then
+        print_ok "Project poc-maintenance 삭제됨"
+    else
+        print_warn "Project poc-maintenance 삭제 진행 중 (백그라운드)"
+    fi
+
+    print_info "ConsoleYAMLSample poc-nodemaintenance 삭제 중..."
     oc delete consoleyamlsample poc-nodemaintenance --ignore-not-found 2>/dev/null || true
-    print_ok "15-node-maintenance 리소스 삭제 완료"
+    if ! oc get consoleyamlsample poc-nodemaintenance &>/dev/null; then
+        print_ok "ConsoleYAMLSample poc-nodemaintenance 삭제됨"
+    else
+        print_warn "ConsoleYAMLSample poc-nodemaintenance 삭제 실패"
+    fi
 }
 
 # =============================================================================

@@ -207,8 +207,14 @@ step_namespace() {
     if oc get namespace "$NS" &>/dev/null; then
         print_ok "Namespace $NS 이미 존재합니다 — 건너뜀"
     else
+        print_info "Namespace $NS 생성 중..."
         oc new-project "$NS" > /dev/null
-        print_ok "Namespace $NS 생성됨"
+        if oc get namespace "$NS" &>/dev/null; then
+            print_ok "Namespace $NS 생성됨"
+        else
+            print_error "Namespace $NS 생성 실패"
+            return 1
+        fi
     fi
 }
 
@@ -226,6 +232,7 @@ step_vms() {
         fi
 
         # poc template에서 VM 생성
+        print_info "VM $VM 생성 중..."
         oc process -n openshift poc -p NAME="$VM" | \
         sed 's/runStrategy: Halted/runStrategy: Always/' > "${VM}.yaml"
         echo "생성된 파일: ${VM}.yaml"
@@ -345,6 +352,7 @@ spec:
         - poc-descheduler
 EOF
     echo "생성된 파일: kubedescheduler.yaml"
+    print_info "KubeDescheduler cluster 생성 중..."
     if ! oc apply -f kubedescheduler.yaml; then
         print_error "KubeDescheduler 적용 실패"
         exit 1
@@ -544,6 +552,7 @@ spec:
             - ${NS}    # 대상 namespace로 변경
 EOF
     echo "생성된 파일: consoleyamlsample-kubedescheduler.yaml"
+    print_info "ConsoleYAMLSample poc-kubedescheduler 등록 중..."
     oc apply -f consoleyamlsample-kubedescheduler.yaml
     print_ok "ConsoleYAMLSample poc-kubedescheduler 등록됨"
 }

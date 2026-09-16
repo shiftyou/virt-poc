@@ -272,8 +272,14 @@ step_namespace() {
     if oc get namespace "$NS" &>/dev/null; then
         print_ok "Namespace $NS already exists — skipping"
     else
+        print_info "Namespace $NS creating..."
         oc new-project "$NS" > /dev/null
-        print_ok "Namespace $NS created"
+        if oc get namespace "$NS" &>/dev/null; then
+            print_ok "Namespace $NS created"
+        else
+            print_error "Namespace $NS creation failed"
+            return 1
+        fi
     fi
 }
 
@@ -305,6 +311,7 @@ spec:
     secrets: "20"
 EOF
     echo "Generated file: resourcequota-poc.yaml"
+    print_info "ResourceQuota poc-quota applying..."
     oc apply -f resourcequota-poc.yaml
 
     print_ok "ResourceQuota poc-quota applied"
@@ -350,6 +357,7 @@ spec:
         secrets: "20"
 EOF
     echo "Generated file: consoleyamlsample-resourcequota.yaml"
+    print_info "ConsoleYAMLSample poc-resource-quota registering..."
     oc apply -f consoleyamlsample-resourcequota.yaml
     print_ok "ConsoleYAMLSample poc-resource-quota registered"
 }
@@ -369,6 +377,7 @@ step_vms() {
             continue
         fi
 
+        print_info "VM $VM creating..."
         oc process -n openshift poc -p NAME="$VM" | \
         sed 's/runStrategy: Always/runStrategy: Halted/' | sed 's/  running: false/  runStrategy: Halted/' > "${VM}.yaml"
         echo "Generated file: ${VM}.yaml"

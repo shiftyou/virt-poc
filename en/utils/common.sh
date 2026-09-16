@@ -41,6 +41,23 @@ print_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 print_error() { echo -e "${RED}[ERR ]${NC} $1"; }
 print_step()  { echo -e "\n${CYAN}━━━ $1 ━━━${NC}"; }
 
+# ---------------------------------------------------------------------------
+# wait_for_resource() — verify resource exists after oc apply
+#   wait_for_resource TYPE NAME NAMESPACE [RETRIES]
+#   e.g.: wait_for_resource pvc grafana-plugins-pvc poc-grafana
+#   RETRIES default: 6 (30s)
+# ---------------------------------------------------------------------------
+wait_for_resource() {
+    local type="$1" name="$2" ns="$3" retries="${4:-6}" i
+    for i in $(seq 1 "$retries"); do
+        if oc get "$type" "$name" -n "$ns" &>/dev/null; then
+            return 0
+        fi
+        sleep 5
+    done
+    return 1
+}
+
 print_header() {
     echo ""
     echo -e "${CYAN}================================================================${NC}"

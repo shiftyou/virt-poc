@@ -41,6 +41,23 @@ print_warn()  { echo -e "${YELLOW}[경고]${NC} $1"; }
 print_error() { echo -e "${RED}[오류]${NC} $1"; }
 print_step()  { echo -e "\n${CYAN}━━━ $1 ━━━${NC}"; }
 
+# ---------------------------------------------------------------------------
+# wait_for_resource() — oc apply 후 리소스가 실제로 존재하는지 확인
+#   wait_for_resource TYPE NAME NAMESPACE [RETRIES]
+#   예: wait_for_resource pvc grafana-plugins-pvc poc-grafana
+#   RETRIES 기본값: 6 (30초)
+# ---------------------------------------------------------------------------
+wait_for_resource() {
+    local type="$1" name="$2" ns="$3" retries="${4:-6}" i
+    for i in $(seq 1 "$retries"); do
+        if oc get "$type" "$name" -n "$ns" &>/dev/null; then
+            return 0
+        fi
+        sleep 5
+    done
+    return 1
+}
+
 print_header() {
     echo ""
     echo -e "${CYAN}================================================================${NC}"

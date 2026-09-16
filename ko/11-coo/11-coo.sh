@@ -224,14 +224,26 @@ step_namespace() {
                 exit 1
             fi
 
+            print_info "Namespace $NS 재생성 중..."
             oc new-project "$NS" > /dev/null
-            print_ok "Namespace $NS 재생성됨"
+            if oc get namespace "$NS" &>/dev/null; then
+                print_ok "Namespace $NS 재생성됨"
+            else
+                print_error "Namespace $NS 재생성 실패"
+                exit 1
+            fi
         else
             print_ok "Namespace $NS 이미 존재합니다 (Active) — 건너뜀"
         fi
     else
+        print_info "Namespace $NS 생성 중..."
         oc new-project "$NS" > /dev/null
-        print_ok "Namespace $NS 생성됨"
+        if oc get namespace "$NS" &>/dev/null; then
+            print_ok "Namespace $NS 생성됨"
+        else
+            print_error "Namespace $NS 생성 실패"
+            exit 1
+        fi
     fi
 }
 
@@ -256,6 +268,7 @@ step_vm() {
     if oc get vm "$VM_NAME" -n "$NS" &>/dev/null; then
         print_ok "VM $VM_NAME 이미 존재합니다 — 건너뜀"
     else
+        print_info "VM $VM_NAME 생성 중..."
         oc process -n openshift poc -p NAME="$VM_NAME" > ./${VM_NAME}.yaml
         oc apply -n "$NS" -f ./${VM_NAME}.yaml
         print_ok "VM $VM_NAME 생성됨"
@@ -298,8 +311,14 @@ spec:
     monitor: metrics
   type: ClusterIP
 EOF
+        print_info "Service poc-monitoring-node-exporter 생성 중..."
         oc apply -f ./poc-monitoring-vm-service.yaml
-        print_ok "Service poc-monitoring-node-exporter 생성됨"
+        if wait_for_resource svc poc-monitoring-node-exporter "$NS"; then
+            print_ok "Service poc-monitoring-node-exporter 생성됨"
+        else
+            print_error "Service poc-monitoring-node-exporter 생성 실패"
+            return 1
+        fi
     fi
 
     # Namespace에 user-workload monitoring 레이블 추가 (OpenShift Console 가시성)
@@ -332,8 +351,14 @@ spec:
         - sourceLabels: [__meta_kubernetes_endpoint_hostname]
           targetLabel: vmname
 EOF
+        print_info "ServiceMonitor poc-vm-node-exporter-console 생성 중..."
         oc apply -f ./poc-vm-servicemonitor-console.yaml
-        print_ok "ServiceMonitor poc-vm-node-exporter-console 생성됨 (OpenShift Console용)"
+        if wait_for_resource servicemonitor poc-vm-node-exporter-console "$NS"; then
+            print_ok "ServiceMonitor poc-vm-node-exporter-console 생성됨 (OpenShift Console용)"
+        else
+            print_error "ServiceMonitor poc-vm-node-exporter-console 생성 실패"
+            return 1
+        fi
     fi
 
     # VM 시작
@@ -384,8 +409,14 @@ spec:
   alertmanagerConfig:
     enabled: true
 EOF
+        print_info "MonitoringStack poc-monitoring-stack 배포 중..."
         oc apply -f ./poc-monitoring-stack.yaml
-        print_ok "MonitoringStack poc-monitoring-stack 배포됨"
+        if wait_for_resource monitoringstack poc-monitoring-stack "$NS"; then
+            print_ok "MonitoringStack poc-monitoring-stack 배포됨"
+        else
+            print_error "MonitoringStack poc-monitoring-stack 배포 실패"
+            return 1
+        fi
     fi
 
     # VM node-exporter용 ServiceMonitor (monitoring.rhobs/v1 — COO 전용)
@@ -415,8 +446,14 @@ spec:
         - sourceLabels: [__meta_kubernetes_endpoint_hostname]
           targetLabel: vmname
 EOF
+            print_info "ServiceMonitor poc-vm-node-exporter 생성 중..."
             oc apply -f ./poc-vm-servicemonitor-coo.yaml
-            print_ok "ServiceMonitor poc-vm-node-exporter 생성됨 (COO 전용)"
+            if wait_for_resource servicemonitor.monitoring.rhobs poc-vm-node-exporter "$NS"; then
+                print_ok "ServiceMonitor poc-vm-node-exporter 생성됨 (COO 전용)"
+            else
+                print_error "ServiceMonitor poc-vm-node-exporter 생성 실패"
+                return 1
+            fi
         fi
     fi
 
@@ -456,8 +493,14 @@ spec:
             summary: "VM 메모리 사용률 90% 초과"
             description: "VM {{ \$labels.name }}의 메모리 사용률이 높습니다."
 EOF
+        print_info "PrometheusRule poc-vm-alerts 생성 중..."
         oc apply -f ./poc-vm-alerts.yaml
-        print_ok "PrometheusRule poc-vm-alerts 생성됨"
+        if wait_for_resource prometheusrule poc-vm-alerts "$NS"; then
+            print_ok "PrometheusRule poc-vm-alerts 생성됨"
+        else
+            print_error "PrometheusRule poc-vm-alerts 생성 실패"
+            return 1
+        fi
     fi
 
     # 모든 namespace의 VMI에 대한 node_exporter 스크래핑 구성
@@ -1047,8 +1090,14 @@ NEDASHEOF
         sed 's/^/    /' ./poc-vm-node-exporter-dashboard.json
     } > ./poc-vm-node-exporter-dashboard.yaml
 
+    print_info "GrafanaDashboard poc-vm-node-exporter 배포 중..."
     oc create -f ./poc-vm-node-exporter-dashboard.yaml
-    print_ok "GrafanaDashboard poc-vm-node-exporter 배포됨"
+    if wait_for_resource grafanadashboard poc-vm-node-exporter "$NS"; then
+        print_ok "GrafanaDashboard poc-vm-node-exporter 배포됨"
+    else
+        print_error "GrafanaDashboard poc-vm-node-exporter 배포 실패"
+        return 1
+    fi
 
     # Grafana Operator 동기화 대기 (최대 90초)
     print_info "  Grafana 대시보드 동기화 대기 중..."
@@ -1103,8 +1152,14 @@ spec:
     jsonData:
       timeInterval: 5s
 EOF
+        print_info "GrafanaDatasource coo-prometheus-datasource 등록 중..."
         oc apply -f ./coo-prometheus-datasource.yaml
-        print_ok "GrafanaDatasource coo-prometheus-datasource 등록됨"
+        if wait_for_resource grafanadatasource coo-prometheus-datasource "$NS"; then
+            print_ok "GrafanaDatasource coo-prometheus-datasource 등록됨"
+        else
+            print_error "GrafanaDatasource coo-prometheus-datasource 등록 실패"
+            return 1
+        fi
     fi
 }
 

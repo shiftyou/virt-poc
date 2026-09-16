@@ -184,8 +184,14 @@ step_namespace() {
     if oc get namespace "$NS" &>/dev/null; then
         print_ok "Namespace $NS already exists — skipping"
     else
+        print_info "Namespace $NS creating..."
         oc new-project "$NS" > /dev/null
-        print_ok "Namespace $NS created"
+        if oc get namespace "$NS" &>/dev/null; then
+            print_ok "Namespace $NS created"
+        else
+            print_error "Namespace $NS creation failed"
+            exit 1
+        fi
     fi
 }
 
@@ -201,6 +207,7 @@ step_vm() {
     fi
 
     # Create VM from poc template
+    print_info "VM $VM_NAME creating..."
     oc process -n openshift poc -p NAME="$VM_NAME" | \
         sed 's/runStrategy: Always/runStrategy: Halted/' | sed 's/  running: false/  runStrategy: Halted/' > "${VM_NAME}.yaml"
     echo "Generated file: ${VM_NAME}.yaml"
@@ -210,6 +217,7 @@ step_vm() {
     # HTTP Liveness Probe (port 80) patch
     # spec.template.spec.readinessProbe / livenessProbe → supported at KubeVirt VMI level
     ensure_runstrategy "$VM_NAME" "$NS"
+    print_info "Liveness/Readiness Probe configuring..."
     oc patch vm "$VM_NAME" -n "$NS" --type=merge -p '{
       "spec": {
         "template": {
@@ -317,6 +325,7 @@ spec:
               name: poc
               namespace: openshift-virtualization-os-images
 EOF
+    print_info "ConsoleYAMLSample poc-liveness-vm registering..."
     oc apply -f consoleyamlsample-liveness-vm.yaml
     print_ok "ConsoleYAMLSample poc-liveness-vm registered"
 }

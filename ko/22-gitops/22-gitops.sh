@@ -299,8 +299,14 @@ spec:
 EOF
 
     echo "생성된 파일: ${app_file}"
+    print_info "ArgoCD Application '${app_name}' 생성 중..."
     oc apply -f "$app_file"
-    print_ok "ArgoCD Application '${app_name}' 생성됨"
+    if oc get application "${app_name}" -n "$ARGOCD_NS" &>/dev/null; then
+        print_ok "ArgoCD Application '${app_name}' 생성됨"
+    else
+        print_error "ArgoCD Application '${app_name}' 생성 실패"
+        return 1
+    fi
 
     local argocd_host
     argocd_host=$(oc get route openshift-gitops-server -n "$ARGOCD_NS" \
@@ -366,8 +372,15 @@ cleanup() {
 
     print_step "--cleanup: gitops-${ns_arg} 리소스 삭제"
 
+    print_info "ArgoCD Application gitops-${ns_arg} 삭제 중..."
     oc delete application "gitops-${ns_arg}" -n "$ARGOCD_NS" \
         --ignore-not-found 2>/dev/null || true
+    if ! oc get application "gitops-${ns_arg}" -n "$ARGOCD_NS" &>/dev/null; then
+        print_ok "ArgoCD Application gitops-${ns_arg} 삭제됨"
+    else
+        print_warn "ArgoCD Application gitops-${ns_arg} 삭제 실패"
+    fi
+
     oc label namespace "$ns_arg" argocd.argoproj.io/managed-by- \
         2>/dev/null || true
     rm -f "${SCRIPT_DIR}/argocd-app-${ns_arg}.yaml"
@@ -380,7 +393,7 @@ cleanup() {
         fi
     fi
 
-    print_ok "GitOps 리소스 삭제됨 (namespace: ${ns_arg})"
+    print_ok "GitOps 리소스 정리 완료 (namespace: ${ns_arg})"
 }
 
 # =============================================================================

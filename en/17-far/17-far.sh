@@ -204,8 +204,14 @@ step_namespace() {
     if oc get namespace "$NS" &>/dev/null; then
         print_ok "Namespace $NS already exists — skipping"
     else
+        print_info "Creating Namespace $NS..."
         oc new-project "$NS" > /dev/null
-        print_ok "Namespace $NS created successfully"
+        if oc get namespace "$NS" &>/dev/null; then
+            print_ok "Namespace $NS created"
+        else
+            print_error "Failed to create Namespace $NS"
+            return 1
+        fi
     fi
 }
 
@@ -229,8 +235,14 @@ metadata:
 stringData:
   --password: "${FENCE_AGENT_PASS:-password}"
 EOF
+    print_info "Creating Secret poc-far-credentials..."
     confirm_and_apply far-credentials-secret.yaml
-    print_ok "Secret poc-far-credentials created successfully → ns: ${REMEDIATION_NS}"
+    if oc get secret poc-far-credentials -n "${REMEDIATION_NS}" &>/dev/null; then
+        print_ok "Secret poc-far-credentials created → ns: ${REMEDIATION_NS}"
+    else
+        print_error "Failed to create Secret poc-far-credentials"
+        return 1
+    fi
 }
 
 # =============================================================================
@@ -287,8 +299,14 @@ EOF
       timeout: 1m0s
 EOF
 
+    print_info "Creating FenceAgentsRemediationTemplate poc-far-template..."
     confirm_and_apply far-template.yaml
-    print_ok "FenceAgentsRemediationTemplate poc-far-template created successfully"
+    if oc get fenceagentsremediationtemplate poc-far-template -n "$REMEDIATION_NS" &>/dev/null; then
+        print_ok "FenceAgentsRemediationTemplate poc-far-template created"
+    else
+        print_error "Failed to create FenceAgentsRemediationTemplate poc-far-template"
+        return 1
+    fi
     print_info "  agent           : fence_ipmilan"
     print_info "  sharedSecretName: poc-far-credentials (contains --password)"
     print_info "  BMC IP          : ${FENCE_AGENT_IP:-192.168.1.100}"
@@ -324,8 +342,14 @@ spec:
       status: Unknown
       duration: 300s
 EOF
+    print_info "Creating NodeHealthCheck poc-far-nhc..."
     confirm_and_apply nhc-far.yaml
-    print_ok "NodeHealthCheck poc-far-nhc created successfully"
+    if oc get nodehealthcheck poc-far-nhc &>/dev/null; then
+        print_ok "NodeHealthCheck poc-far-nhc created"
+    else
+        print_error "Failed to create NodeHealthCheck poc-far-nhc"
+        return 1
+    fi
     print_info "  Condition: Ready=False or Unknown for 300s or more → FAR triggered (IPMI reboot)"
 }
 
@@ -370,8 +394,14 @@ spec:
           status: Unknown
           duration: 300s
 EOF
+    print_info "Registering ConsoleYAMLSample poc-nodehealthcheck-far..."
     oc apply -f consoleyamlsample-nhc-far.yaml
-    print_ok "ConsoleYAMLSample poc-nodehealthcheck-far registered successfully"
+    if oc get consoleyamlsample poc-nodehealthcheck-far &>/dev/null; then
+        print_ok "ConsoleYAMLSample poc-nodehealthcheck-far registered"
+    else
+        print_error "Failed to register ConsoleYAMLSample poc-nodehealthcheck-far"
+        return 1
+    fi
 
     cat > consoleyamlsample-far-template.yaml <<'EOF'
 apiVersion: console.openshift.io/v1
@@ -410,8 +440,14 @@ spec:
             --username: admin
           timeout: 1m0s
 EOF
+    print_info "Registering ConsoleYAMLSample poc-fenceagentsremediationtemplate..."
     oc apply -f consoleyamlsample-far-template.yaml
-    print_ok "ConsoleYAMLSample poc-fenceagentsremediationtemplate registered successfully"
+    if oc get consoleyamlsample poc-fenceagentsremediationtemplate &>/dev/null; then
+        print_ok "ConsoleYAMLSample poc-fenceagentsremediationtemplate registered"
+    else
+        print_error "Failed to register ConsoleYAMLSample poc-fenceagentsremediationtemplate"
+        return 1
+    fi
 }
 
 print_summary() {
@@ -443,12 +479,47 @@ print_summary() {
 cleanup() {
     print_step "--cleanup: Delete 17-far resources"
     local _rem_ns="openshift-workload-availability"
+
+    print_info "Deleting Project poc-far..."
     oc delete project poc-far --ignore-not-found 2>/dev/null || true
+    if ! oc get namespace poc-far &>/dev/null; then
+        print_ok "Project poc-far deleted"
+    else
+        print_warn "Project poc-far still deleting (background)"
+    fi
+
+    print_info "Deleting NodeHealthCheck poc-far-nhc..."
     oc delete nodehealthcheck poc-far-nhc --ignore-not-found 2>/dev/null || true
+    if ! oc get nodehealthcheck poc-far-nhc &>/dev/null; then
+        print_ok "NodeHealthCheck poc-far-nhc deleted"
+    else
+        print_warn "Failed to delete NodeHealthCheck poc-far-nhc"
+    fi
+
+    print_info "Deleting FenceAgentsRemediationTemplate poc-far-template..."
     oc delete fenceagentsremediationtemplate poc-far-template -n "$_rem_ns" --ignore-not-found 2>/dev/null || true
+    if ! oc get fenceagentsremediationtemplate poc-far-template -n "$_rem_ns" &>/dev/null; then
+        print_ok "FenceAgentsRemediationTemplate poc-far-template deleted"
+    else
+        print_warn "Failed to delete FenceAgentsRemediationTemplate poc-far-template"
+    fi
+
+    print_info "Deleting Secret poc-far-credentials..."
     oc delete secret poc-far-credentials -n "$_rem_ns" --ignore-not-found 2>/dev/null || true
+    if ! oc get secret poc-far-credentials -n "$_rem_ns" &>/dev/null; then
+        print_ok "Secret poc-far-credentials deleted"
+    else
+        print_warn "Failed to delete Secret poc-far-credentials"
+    fi
+
+    print_info "Deleting ConsoleYAMLSamples..."
     oc delete consoleyamlsample poc-nodehealthcheck-far poc-fenceagentsremediationtemplate --ignore-not-found 2>/dev/null || true
-    print_ok "17-far resources deleted successfully"
+    if ! oc get consoleyamlsample poc-nodehealthcheck-far &>/dev/null && \
+       ! oc get consoleyamlsample poc-fenceagentsremediationtemplate &>/dev/null; then
+        print_ok "ConsoleYAMLSamples deleted"
+    else
+        print_warn "Failed to delete ConsoleYAMLSamples"
+    fi
 }
 
 # =============================================================================

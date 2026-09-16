@@ -215,9 +215,11 @@ step_users() {
             -n openshift-config
         print_ok "htpasswd secret 업데이트됨"
     else
+        print_info "htpasswd secret 생성 중..."
         oc create secret generic "$HTPASSWD_SECRET" \
             --from-file=htpasswd="$HTPASSWD_TMP" \
             -n openshift-config
+        oc get secret "$HTPASSWD_SECRET" -n openshift-config &>/dev/null
         print_ok "htpasswd secret 생성됨"
     fi
     rm -f "$HTPASSWD_TMP"
@@ -251,7 +253,9 @@ step_namespaces() {
         if oc get namespace "$ns" &>/dev/null; then
             print_warn "Namespace가 이미 존재합니다: $ns"
         else
+            print_info "Namespace ${ns} 생성 중..."
             oc create namespace "$ns"
+            oc get namespace "$ns" &>/dev/null
             print_ok "Namespace 생성됨: ${CYAN}${ns}${NC}"
         fi
     done
@@ -268,28 +272,40 @@ step_rbac() {
     printf "  %-10s  %-30s  %-12s  %s\n" "사용자" "Namespace" "역할" "VM 생성"
     echo "  ──────────────────────────────────────────────────────────────"
 
+    print_info "${USER1} → ${NS1} [admin] RoleBinding 생성 중..."
     oc adm policy add-role-to-user admin "$USER1" -n "$NS1" 2>/dev/null
     printf "  %-10s  %-30s  %-12s  %s\n" "$USER1" "$NS1" "admin" "가능"
+    oc get rolebindings -n "$NS1" -o jsonpath='{.items[*].subjects[*].name}' 2>/dev/null | grep -q "$USER1"
     print_ok "${USER1} → ${NS1} [admin]  — VM 생성 가능"
 
+    print_info "${USER2} → ${NS1} [view] RoleBinding 생성 중..."
     oc adm policy add-role-to-user view "$USER2" -n "$NS1" 2>/dev/null
     printf "  %-10s  %-30s  %-12s  %s\n" "$USER2" "$NS1" "view" "불가"
+    oc get rolebindings -n "$NS1" -o jsonpath='{.items[*].subjects[*].name}' 2>/dev/null | grep -q "$USER2"
     print_ok "${USER2} → ${NS1} [view]   — 읽기 전용, VM 생성 불가"
 
+    print_info "${USER3} → ${NS2} [admin] RoleBinding 생성 중..."
     oc adm policy add-role-to-user admin "$USER3" -n "$NS2" 2>/dev/null
     printf "  %-10s  %-30s  %-12s  %s\n" "$USER3" "$NS2" "admin" "가능"
+    oc get rolebindings -n "$NS2" -o jsonpath='{.items[*].subjects[*].name}' 2>/dev/null | grep -q "$USER3"
     print_ok "${USER3} → ${NS2} [admin]  — VM 생성 가능"
 
+    print_info "${USER4} → ${NS2} [view] RoleBinding 생성 중..."
     oc adm policy add-role-to-user view "$USER4" -n "$NS2" 2>/dev/null
     printf "  %-10s  %-30s  %-12s  %s\n" "$USER4" "$NS2" "view" "불가"
+    oc get rolebindings -n "$NS2" -o jsonpath='{.items[*].subjects[*].name}' 2>/dev/null | grep -q "$USER4"
     print_ok "${USER4} → ${NS2} [view]   — 읽기 전용, VM 생성 불가"
 
     # DataSource 참조 권한 — VM 생성자(admin 사용자)에게만 view 권한 부여
     # VM 생성 시 openshift-virtualization-os-images의 DataSource를 sourceRef로 사용하므로
+    print_info "${USER1} → ${DATASOURCE_NS} [view] RoleBinding 생성 중..."
     oc adm policy add-role-to-user view "$USER1" -n "$DATASOURCE_NS" 2>/dev/null
+    oc get rolebindings -n "$DATASOURCE_NS" -o jsonpath='{.items[*].subjects[*].name}' 2>/dev/null | grep -q "$USER1"
     print_ok "${USER1} → ${DATASOURCE_NS} [view] (DataSource 참조용)"
 
+    print_info "${USER3} → ${DATASOURCE_NS} [view] RoleBinding 생성 중..."
     oc adm policy add-role-to-user view "$USER3" -n "$DATASOURCE_NS" 2>/dev/null
+    oc get rolebindings -n "$DATASOURCE_NS" -o jsonpath='{.items[*].subjects[*].name}' 2>/dev/null | grep -q "$USER3"
     print_ok "${USER3} → ${DATASOURCE_NS} [view] (DataSource 참조용)"
 }
 
@@ -313,7 +329,9 @@ create_vm() {
         sed 's/runStrategy: Halted/runStrategy: Always/' | \
         sed 's/  running: false/  runStrategy: Always/' > "${vm_yaml}"
     echo "생성된 파일: ${vm_yaml}"
+    print_info "VM ${vm_name} 생성 중..."
     oc apply -n "$ns" -f "${vm_yaml}"
+    oc get vm "$vm_name" -n "$ns" &>/dev/null
     virtctl start "$vm_name" -n "$ns" 2>/dev/null || true
     print_ok "VM 생성 및 시작됨: ${CYAN}${vm_name}${NC} (namespace: ${ns})"
 }

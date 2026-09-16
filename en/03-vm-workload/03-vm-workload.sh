@@ -222,7 +222,9 @@ step_namespace() {
     if oc get namespace "${VM_NS}" &>/dev/null; then
         print_ok "Namespace ${VM_NS} already exists — skipping"
     else
+        print_info "Creating Namespace ${VM_NS}..."
         oc new-project "${VM_NS}" > /dev/null
+        oc get namespace "${VM_NS}" &>/dev/null
         print_ok "Namespace ${VM_NS} created"
     fi
 }
@@ -320,7 +322,9 @@ spec:
 EOF
     fi
     echo "Generated file: ${nad_file}"
+    print_info "Creating NAD ${NAD_NAME}..."
     oc apply -f "$nad_file"
+    oc get net-attach-def "${NAD_NAME}" -n "${VM_NS}" &>/dev/null
     print_ok "NAD ${NAD_NAME} registered (namespace: ${VM_NS})"
 }
 
@@ -347,7 +351,9 @@ step_vm() {
         sed 's/runStrategy: Always/runStrategy: Halted/' | \
         sed 's/  running: false/  runStrategy: Halted/' > "${vm_yaml}"
     echo "Generated file: ${vm_yaml}"
+    print_info "Creating VM ${VM_NAME}..."
     oc apply -n "$VM_NS" -f "${vm_yaml}"
+    oc get vm "${VM_NAME}" -n "${VM_NS}" &>/dev/null
 
     ensure_runstrategy "$VM_NAME" "$VM_NS"
 
@@ -483,7 +489,9 @@ spec:
                   storage: 30Gi
 EOF
     echo "Generated file: consoleyamlsample-virtualmachine.yaml"
+    print_info "Creating ConsoleYAMLSample poc-virtualmachine..."
     oc apply -f consoleyamlsample-virtualmachine.yaml
+    oc get consoleyamlsample poc-virtualmachine &>/dev/null
     print_ok "ConsoleYAMLSample poc-virtualmachine registered"
 }
 
