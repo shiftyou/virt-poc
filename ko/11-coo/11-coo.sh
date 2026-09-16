@@ -442,8 +442,8 @@ spec:
           labels:
             severity: warning
           annotations:
-            summary: "VM is not in Running state"
-            description: "VM {{ \$labels.name }} state: {{ \$labels.phase }}"
+            summary: "VM이 Running 상태가 아님"
+            description: "VM {{ \$labels.name }} 상태: {{ \$labels.phase }}"
         - alert: VMHighMemoryUsage
           expr: >
             (kubevirt_vmi_memory_resident_bytes /
@@ -452,8 +452,8 @@ spec:
           labels:
             severity: warning
           annotations:
-            summary: "VM memory usage exceeds 90%"
-            description: "VM {{ \$labels.name }} has high memory usage."
+            summary: "VM 메모리 사용률 90% 초과"
+            description: "VM {{ \$labels.name }}의 메모리 사용률이 높습니다."
 EOF
         oc apply -f ./poc-vm-alerts.yaml
         print_ok "PrometheusRule poc-vm-alerts 생성됨"

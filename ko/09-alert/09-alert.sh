@@ -237,8 +237,8 @@ spec:
           labels:
             severity: critical
           annotations:
-            summary: "Specified VM {{ \$labels.name }} has stopped"
-            description: "VM {{ \$labels.name }} in namespace {{ \$labels.namespace }} is stopped. VMI does not exist. Immediate attention required."
+            summary: "지정된 VM {{ \$labels.name }}이(가) 중지됨"
+            description: "namespace {{ \$labels.namespace }}의 VM {{ \$labels.name }}이(가) 중지되었습니다. VMI가 존재하지 않습니다. 즉시 확인이 필요합니다."
         - alert: VMStopped
           expr: |
             kubevirt_vmi_phase_count{phase="succeeded"} > 0
@@ -246,8 +246,8 @@ spec:
           labels:
             severity: critical
           annotations:
-            summary: "VM has stopped"
-            description: "{{ \$value }} VM(s) in succeeded (stopped) state detected in namespace {{ \$labels.namespace }}."
+            summary: "VM이 중지됨"
+            description: "namespace {{ \$labels.namespace }}에서 {{ \$value }}개의 VM이 succeeded(중지) 상태로 감지되었습니다."
         - alert: VMStuckPending
           expr: |
             kubevirt_vmi_phase_count{phase="pending"} > 0
@@ -255,8 +255,8 @@ spec:
           labels:
             severity: warning
           annotations:
-            summary: "VM is waiting in pending state"
-            description: "{{ \$value }} VM(s) in pending state exist in namespace {{ \$labels.namespace }}."
+            summary: "VM이 pending 상태에서 대기 중"
+            description: "namespace {{ \$labels.namespace }}에 {{ \$value }}개의 VM이 pending 상태로 존재합니다."
         - alert: VMStuckStarting
           expr: |
             kubevirt_vmi_phase_count{phase=~"scheduling|scheduled"} > 0
@@ -264,16 +264,16 @@ spec:
           labels:
             severity: warning
           annotations:
-            summary: "VM is stuck while starting"
-            description: "VM(s) in {{ \$labels.phase }} state have persisted for more than 10 minutes in namespace {{ \$labels.namespace }}."
+            summary: "VM이 시작 중 멈춤"
+            description: "namespace {{ \$labels.namespace }}에서 VM이 {{ \$labels.phase }} 상태로 10분 이상 지속되고 있습니다."
         - alert: VMLiveMigrationFailed
           expr: |
             increase(kubevirt_vmi_migration_phase_transition_time_seconds_count{phase="Failed"}[10m]) > 0
           labels:
             severity: warning
           annotations:
-            summary: "VM Live Migration has failed"
-            description: "Live Migration of VM {{ \$labels.vmi }} has failed."
+            summary: "VM Live Migration 실패"
+            description: "VM {{ \$labels.vmi }}의 Live Migration이 실패했습니다."
     - name: poc-vm-resources
       interval: 60s
       rules:
@@ -284,8 +284,8 @@ spec:
           labels:
             severity: warning
           annotations:
-            summary: "VM memory is running low"
-            description: "Available memory for VM {{ \$labels.name }} (namespace: {{ \$labels.namespace }}) is {{ \$value | humanize }}."
+            summary: "VM 메모리 부족"
+            description: "VM {{ \$labels.name }} (namespace: {{ \$labels.namespace }})의 가용 메모리가 {{ \$value | humanize }}입니다."
 EOF
     oc apply -f poc-vm-alerts.yaml
     print_ok "PrometheusRule poc-vm-alerts 배포됨"
@@ -300,8 +300,8 @@ kind: ConsoleYAMLSample
 metadata:
   name: poc-prometheusrule-vm-alerts
 spec:
-  title: "POC PrometheusRule VM Alert Rules"
-  description: "A PrometheusRule example that detects major VM status anomalies such as VM stopped, Pending, Migration failure, etc. Use in environments where User-defined Project Monitoring is enabled."
+  title: "POC PrometheusRule VM 알림 규칙"
+  description: "VM 중지, Pending 상태 지속, Migration 실패 등 주요 VM 상태 이상을 감지하는 PrometheusRule 예제입니다. 사용자 정의 프로젝트 모니터링이 활성화된 환경에서 사용하세요."
   targetResource:
     apiVersion: monitoring.coreos.com/v1
     kind: PrometheusRule
@@ -329,8 +329,8 @@ spec:
               labels:
                 severity: critical
               annotations:
-                summary: "Specified VM {{ $labels.name }} has stopped"
-                description: "VM {{ $labels.name }} in namespace {{ $labels.namespace }} is stopped."
+                summary: "지정된 VM {{ $labels.name }}이(가) 중지됨"
+                description: "namespace {{ $labels.namespace }}의 VM {{ $labels.name }}이(가) 중지되었습니다."
             - alert: VMStopped
               expr: |
                 kubevirt_vmi_phase_count{phase="succeeded"} > 0
@@ -338,8 +338,8 @@ spec:
               labels:
                 severity: critical
               annotations:
-                summary: "VM has stopped"
-                description: "{{ $value }} VM(s) in succeeded state detected in namespace {{ $labels.namespace }}."
+                summary: "VM이 중지됨"
+                description: "namespace {{ $labels.namespace }}에서 {{ $value }}개의 VM이 succeeded 상태로 감지되었습니다."
             - alert: VMStuckPending
               expr: |
                 kubevirt_vmi_phase_count{phase="pending"} > 0
@@ -347,16 +347,16 @@ spec:
               labels:
                 severity: warning
               annotations:
-                summary: "VM is waiting in pending state"
-                description: "{{ $value }} VM(s) in pending state exist in namespace {{ $labels.namespace }}."
+                summary: "VM이 pending 상태에서 대기 중"
+                description: "namespace {{ $labels.namespace }}에 {{ $value }}개의 VM이 pending 상태로 존재합니다."
             - alert: VMLiveMigrationFailed
               expr: |
                 increase(kubevirt_vmi_migration_phase_transition_time_seconds_count{phase="Failed"}[10m]) > 0
               labels:
                 severity: warning
               annotations:
-                summary: "VM Live Migration has failed"
-                description: "Live Migration of VM {{ $labels.vmi }} has failed."
+                summary: "VM Live Migration 실패"
+                description: "VM {{ $labels.vmi }}의 Live Migration이 실패했습니다."
 EOF
     oc apply -f consoleyamlsample-prometheusrule.yaml
     print_ok "ConsoleYAMLSample poc-prometheusrule-vm-alerts 등록됨"

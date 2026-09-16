@@ -93,8 +93,8 @@ spec:
           labels:
             severity: critical
           annotations:
-            summary: "VM has stopped"
-            description: "{{ $value }} VM(s) in succeeded (stopped) state detected in namespace {{ $labels.namespace }}."
+            summary: "VM이 중지됨"
+            description: "namespace {{ $labels.namespace }}에서 {{ $value }}개의 VM이 succeeded(중지) 상태로 감지되었습니다."
 
         # VM이 5분 이상 pending 상태에서 대기
         - alert: VMStuckPending
@@ -104,8 +104,8 @@ spec:
           labels:
             severity: warning
           annotations:
-            summary: "VM is waiting in pending state"
-            description: "{{ $value }} VM(s) in pending state exist in namespace {{ $labels.namespace }}."
+            summary: "VM이 pending 상태에서 대기 중"
+            description: "namespace {{ $labels.namespace }}에 {{ $value }}개의 VM이 pending 상태로 존재합니다."
 
         # VM이 10분 이상 scheduling/scheduled phase에서 멈춤
         - alert: VMStuckStarting
@@ -115,8 +115,8 @@ spec:
           labels:
             severity: warning
           annotations:
-            summary: "VM is stuck while starting"
-            description: "VM(s) in {{ $labels.phase }} state have persisted for more than 10 minutes in namespace {{ $labels.namespace }}."
+            summary: "VM이 시작 중 멈춤"
+            description: "namespace {{ $labels.namespace }}에서 VM이 {{ $labels.phase }} 상태로 10분 이상 지속되고 있습니다."
 
         # Live Migration 실패
         - alert: VMLiveMigrationFailed
@@ -125,8 +125,8 @@ spec:
           labels:
             severity: warning
           annotations:
-            summary: "VM Live Migration has failed"
-            description: "Live Migration of VM {{ $labels.vmi }} has failed."
+            summary: "VM Live Migration 실패"
+            description: "VM {{ $labels.vmi }}의 Live Migration이 실패했습니다."
 
     - name: poc-vm-resources
       interval: 60s
@@ -140,8 +140,8 @@ spec:
           labels:
             severity: warning
           annotations:
-            summary: "VM memory is running low"
-            description: "Available memory for VM {{ $labels.name }} (namespace: {{ $labels.namespace }}) is {{ $value | humanize }}."
+            summary: "VM 메모리 부족"
+            description: "VM {{ $labels.name }} (namespace: {{ $labels.namespace }})의 가용 메모리가 {{ $value | humanize }}입니다."
 ```
 
 ---
