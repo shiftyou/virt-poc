@@ -2451,7 +2451,7 @@ ensure_polystat_plugin() {
     local grafana_label="app=${grafana_name}"
     local grafana_pod container_name
 
-    print_info "Waiting for Grafana Pod to be ready..."
+    print_info "Waiting for Grafana Pod to be ready... (up to 60s)"
     wait_grafana_ready "$GRAFANA_NS" "$grafana_label"
     grafana_pod=$(oc get pods -n "$GRAFANA_NS" -l "$grafana_label" \
         -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
@@ -2508,7 +2508,7 @@ ensure_polystat_plugin() {
         return 1
     fi
 
-    print_info "Waiting for Grafana Pod to be ready..."
+    print_info "Waiting for Grafana Pod to be ready... (up to 60s)"
     wait_grafana_ready "$GRAFANA_NS" "$grafana_label"
     grafana_pod=$(oc get pods -n "$GRAFANA_NS" -l "$grafana_label" \
         -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
