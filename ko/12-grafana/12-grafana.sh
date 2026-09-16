@@ -2560,15 +2560,16 @@ ensure_polystat_plugin() {
 
     print_info "Grafana 컨테이너를 재시작하여 플러그인을 로드합니다... (emptyDir 볼륨 유지)"
     oc exec "$grafana_pod" -n "$GRAFANA_NS" -c "$container_name" -- kill 1 2>/dev/null || true
-    sleep 5
-    print_info "컨테이너 재시작 대기 중... (최대 60초)"
+    sleep 10
+    print_info "컨테이너 재시작 대기 중... (최대 3분, CrashLoopBackOff 시 시간 소요)"
     local restart_ok=false ri
-    for ri in $(seq 1 12); do
-        if oc exec "$grafana_pod" -n "$GRAFANA_NS" -c "$container_name" -- true 2>/dev/null; then
+    for ri in $(seq 1 36); do
+        if oc exec "$grafana_pod" -n "$GRAFANA_NS" -c "$container_name" -- \
+            ls /var/lib/grafana/plugins/grafana-polystat-panel/plugin.json 2>/dev/null | grep -q plugin.json; then
             restart_ok=true
             break
         fi
-        printf "  [%d/12] 컨테이너 재시작 대기 중...\r" "$ri"
+        printf "  [%d/36] 컨테이너 재시작 대기 중...\r" "$ri"
         sleep 5
     done
     echo ""

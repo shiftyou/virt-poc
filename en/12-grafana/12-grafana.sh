@@ -2559,15 +2559,16 @@ ensure_polystat_plugin() {
 
     print_info "Restarting Grafana container to load the plugin... (emptyDir volume preserved)"
     oc exec "$grafana_pod" -n "$GRAFANA_NS" -c "$container_name" -- kill 1 2>/dev/null || true
-    sleep 5
-    print_info "Waiting for container restart... (up to 60s)"
+    sleep 10
+    print_info "Waiting for container restart... (up to 3min, may take longer with CrashLoopBackOff)"
     local restart_ok=false ri
-    for ri in $(seq 1 12); do
-        if oc exec "$grafana_pod" -n "$GRAFANA_NS" -c "$container_name" -- true 2>/dev/null; then
+    for ri in $(seq 1 36); do
+        if oc exec "$grafana_pod" -n "$GRAFANA_NS" -c "$container_name" -- \
+            ls /var/lib/grafana/plugins/grafana-polystat-panel/plugin.json 2>/dev/null | grep -q plugin.json; then
             restart_ok=true
             break
         fi
-        printf "  [%d/12] Waiting for container restart...\r" "$ri"
+        printf "  [%d/36] Waiting for container restart...\r" "$ri"
         sleep 5
     done
     echo ""
