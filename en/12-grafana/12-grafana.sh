@@ -2509,11 +2509,27 @@ ensure_polystat_plugin() {
     fi
 
     print_info "Waiting for Grafana Pod to be ready... (up to 60s)"
-    wait_grafana_ready "$GRAFANA_NS" "$grafana_label"
-    grafana_pod=$(oc get pods -n "$GRAFANA_NS" -l "$grafana_label" \
-        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
-    container_name=$(oc get pod "$grafana_pod" -n "$GRAFANA_NS" \
-        -o jsonpath='{.spec.containers[0].name}' 2>/dev/null || echo "grafana")
+    local cp_ok=false retry
+    for retry in $(seq 1 12); do
+        wait_grafana_ready "$GRAFANA_NS" "$grafana_label"
+        grafana_pod=$(oc get pods -n "$GRAFANA_NS" -l "$grafana_label" \
+            -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+        container_name=$(oc get pod "$grafana_pod" -n "$GRAFANA_NS" \
+            -o jsonpath='{.spec.containers[0].name}' 2>/dev/null || echo "grafana")
+
+        if oc exec "$grafana_pod" -n "$GRAFANA_NS" -c "$container_name" -- true 2>/dev/null; then
+            cp_ok=true
+            break
+        fi
+        printf "  [%d/12] Waiting for pod connection...\r" "$retry"
+        sleep 5
+    done
+    echo ""
+
+    if [ "$cp_ok" != "true" ]; then
+        print_error "Cannot connect to Grafana Pod."
+        return 1
+    fi
     print_ok "Grafana Pod ready: ${grafana_pod} (container: ${container_name})"
 
     oc cp "$zip_file" "$GRAFANA_NS/$grafana_pod:/tmp/grafana-polystat-panel.zip" -c "$container_name"
