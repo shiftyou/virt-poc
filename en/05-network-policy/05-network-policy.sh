@@ -679,7 +679,9 @@ spec:
             - podSelector: {}
 EOF
     echo "Generated file: consoleyamlsample-allow-same-network.yaml"
+    print_info "Creating ConsoleYAMLSample poc-netpol-allow-same-network..."
     oc apply -f consoleyamlsample-allow-same-network.yaml
+    oc get consoleyamlsample poc-netpol-allow-same-network &>/dev/null
     print_ok "ConsoleYAMLSample poc-netpol-allow-same-network registered"
 
     # Allow Access From Project1 sample
@@ -711,7 +713,9 @@ spec:
                   kubernetes.io/metadata.name: ${NS1}
 EOF
     echo "Generated file: consoleyamlsample-allow-from-project1.yaml"
+    print_info "Creating ConsoleYAMLSample poc-netpol-allow-from-project1..."
     oc apply -f consoleyamlsample-allow-from-project1.yaml
+    oc get consoleyamlsample poc-netpol-allow-from-project1 &>/dev/null
     print_ok "ConsoleYAMLSample poc-netpol-allow-from-project1 registered"
 }
 
