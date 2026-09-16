@@ -2420,9 +2420,6 @@ DASHBOARD_EOF
     fi
 }
 
-# Grafana 인스턴스에 grafana-polystat-panel 플러그인을 설치합니다.
-# Grafana CR의 GF_INSTALL_PLUGINS 환경변수를 통해 구성하며,
-# Grafana Operator가 Pod를 재시작하여 플러그인을 자동 설치합니다.
 ensure_polystat_plugin() {
     local grafana_name
     grafana_name=$(oc get grafana -n "$GRAFANA_NS" -l dashboards=poc-grafana \
@@ -2433,31 +2430,69 @@ ensure_polystat_plugin() {
         return 1
     fi
 
+    local grafana_pod
+    grafana_pod=$(oc get pods -n "$GRAFANA_NS" -l app="${grafana_name}" \
+        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+
+    if [ -n "$grafana_pod" ]; then
+        local installed
+        installed=$(oc exec "$grafana_pod" -n "$GRAFANA_NS" -c grafana -- \
+            ls /var/lib/grafana/plugins/grafana-polystat-panel/plugin.json 2>/dev/null || true)
+        if [ -n "$installed" ]; then
+            print_ok "grafana-polystat-panel 플러그인이 이미 설치되어 있습니다"
+            return 0
+        fi
+    fi
+
     local current_plugins
     current_plugins=$(oc get grafana "$grafana_name" -n "$GRAFANA_NS" \
         -o jsonpath='{.spec.deployment.spec.template.spec.containers[?(@.name=="grafana")].env[?(@.name=="GF_INSTALL_PLUGINS")].value}' 2>/dev/null || true)
 
-    if echo "$current_plugins" | grep -q "grafana-polystat-panel"; then
-        print_ok "grafana-polystat-panel 플러그인이 이미 설치되어 있습니다"
+    if ! echo "$current_plugins" | grep -q "grafana-polystat-panel"; then
+        local new_plugins="grafana-polystat-panel"
+        [ -n "$current_plugins" ] && new_plugins="${current_plugins},grafana-polystat-panel"
+
+        oc patch grafana "$grafana_name" -n "$GRAFANA_NS" --type=merge \
+            -p "{\"spec\":{\"deployment\":{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"grafana\",\"env\":[{\"name\":\"GF_INSTALL_PLUGINS\",\"value\":\"${new_plugins}\"}]}]}}}}}}" > /dev/null 2>&1 || true
+
+        print_info "Grafana Pod가 플러그인 설치를 위해 재시작됩니다 — 대기 중..."
+        local deploy_name
+        deploy_name=$(oc get deployment -n "$GRAFANA_NS" -l app="${grafana_name}" \
+            -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "${grafana_name}-deployment")
+        oc rollout status "deployment/${deploy_name}" -n "$GRAFANA_NS" --timeout=180s 2>/dev/null || true
+    fi
+
+    grafana_pod=$(oc get pods -n "$GRAFANA_NS" -l app="${grafana_name}" \
+        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+    local installed
+    installed=$(oc exec "$grafana_pod" -n "$GRAFANA_NS" -c grafana -- \
+        ls /var/lib/grafana/plugins/grafana-polystat-panel/plugin.json 2>/dev/null || true)
+
+    if [ -n "$installed" ]; then
+        print_ok "grafana-polystat-panel 플러그인 설치 완료 (온라인)"
         return 0
     fi
 
-    local new_plugins="grafana-polystat-panel"
-    [ -n "$current_plugins" ] && new_plugins="${current_plugins},grafana-polystat-panel"
-
-    if oc patch grafana "$grafana_name" -n "$GRAFANA_NS" --type=merge \
-        -p "{\"spec\":{\"deployment\":{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"grafana\",\"env\":[{\"name\":\"GF_INSTALL_PLUGINS\",\"value\":\"${new_plugins}\"}]}]}}}}}}" > /dev/null; then
-        print_ok "grafana-polystat-panel 플러그인 설치 구성 완료"
-    else
-        print_warn "Grafana CR 패치에 실패했습니다 — Grafana 인스턴스에 grafana-polystat-panel 플러그인을 수동으로 추가하세요"
+    print_warn "온라인 플러그인 설치 실패 (airgap 환경?) — 로컬 zip에서 설치합니다..."
+    local zip_file="${SCRIPT_DIR}/grafana-polystat-panel.zip"
+    if [ ! -f "$zip_file" ]; then
+        print_error "로컬 플러그인 zip 파일을 찾을 수 없습니다: ${zip_file}"
         return 1
     fi
 
-    print_info "  Grafana Pod가 플러그인 설치 후 재시작됩니다 — 잠시 대기..."
+    oc cp "$zip_file" "$GRAFANA_NS/$grafana_pod:/tmp/grafana-polystat-panel.zip" -c grafana
+    oc exec "$grafana_pod" -n "$GRAFANA_NS" -c grafana -- \
+        unzip -o -q /tmp/grafana-polystat-panel.zip -d /var/lib/grafana/plugins/
+    oc exec "$grafana_pod" -n "$GRAFANA_NS" -c grafana -- \
+        rm -f /tmp/grafana-polystat-panel.zip
+
+    oc delete pod "$grafana_pod" -n "$GRAFANA_NS" --grace-period=10 > /dev/null
+    print_info "Grafana Pod를 재시작하여 플러그인을 로드합니다..."
     local deploy_name
     deploy_name=$(oc get deployment -n "$GRAFANA_NS" -l app="${grafana_name}" \
         -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "${grafana_name}-deployment")
     oc rollout status "deployment/${deploy_name}" -n "$GRAFANA_NS" --timeout=180s 2>/dev/null || true
+    print_ok "grafana-polystat-panel 플러그인 설치 완료 (airgap)"
     return 0
 }
 

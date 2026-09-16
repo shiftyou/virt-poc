@@ -2419,9 +2419,6 @@ DASHBOARD_EOF
     fi
 }
 
-# Installs the grafana-polystat-panel plugin on the Grafana instance.
-# Configured via GF_INSTALL_PLUGINS env var in the Grafana CR; the Grafana
-# Operator restarts the pod to auto-install the plugin.
 ensure_polystat_plugin() {
     local grafana_name
     grafana_name=$(oc get grafana -n "$GRAFANA_NS" -l dashboards=poc-grafana \
@@ -2432,31 +2429,69 @@ ensure_polystat_plugin() {
         return 1
     fi
 
+    local grafana_pod
+    grafana_pod=$(oc get pods -n "$GRAFANA_NS" -l app="${grafana_name}" \
+        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+
+    if [ -n "$grafana_pod" ]; then
+        local installed
+        installed=$(oc exec "$grafana_pod" -n "$GRAFANA_NS" -c grafana -- \
+            ls /var/lib/grafana/plugins/grafana-polystat-panel/plugin.json 2>/dev/null || true)
+        if [ -n "$installed" ]; then
+            print_ok "grafana-polystat-panel plugin is already installed"
+            return 0
+        fi
+    fi
+
     local current_plugins
     current_plugins=$(oc get grafana "$grafana_name" -n "$GRAFANA_NS" \
         -o jsonpath='{.spec.deployment.spec.template.spec.containers[?(@.name=="grafana")].env[?(@.name=="GF_INSTALL_PLUGINS")].value}' 2>/dev/null || true)
 
-    if echo "$current_plugins" | grep -q "grafana-polystat-panel"; then
-        print_ok "grafana-polystat-panel plugin is already installed"
+    if ! echo "$current_plugins" | grep -q "grafana-polystat-panel"; then
+        local new_plugins="grafana-polystat-panel"
+        [ -n "$current_plugins" ] && new_plugins="${current_plugins},grafana-polystat-panel"
+
+        oc patch grafana "$grafana_name" -n "$GRAFANA_NS" --type=merge \
+            -p "{\"spec\":{\"deployment\":{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"grafana\",\"env\":[{\"name\":\"GF_INSTALL_PLUGINS\",\"value\":\"${new_plugins}\"}]}]}}}}}}" > /dev/null 2>&1 || true
+
+        print_info "Grafana pod will restart to install the plugin — waiting..."
+        local deploy_name
+        deploy_name=$(oc get deployment -n "$GRAFANA_NS" -l app="${grafana_name}" \
+            -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "${grafana_name}-deployment")
+        oc rollout status "deployment/${deploy_name}" -n "$GRAFANA_NS" --timeout=180s 2>/dev/null || true
+    fi
+
+    grafana_pod=$(oc get pods -n "$GRAFANA_NS" -l app="${grafana_name}" \
+        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+    local installed
+    installed=$(oc exec "$grafana_pod" -n "$GRAFANA_NS" -c grafana -- \
+        ls /var/lib/grafana/plugins/grafana-polystat-panel/plugin.json 2>/dev/null || true)
+
+    if [ -n "$installed" ]; then
+        print_ok "grafana-polystat-panel plugin installed (online)"
         return 0
     fi
 
-    local new_plugins="grafana-polystat-panel"
-    [ -n "$current_plugins" ] && new_plugins="${current_plugins},grafana-polystat-panel"
-
-    if oc patch grafana "$grafana_name" -n "$GRAFANA_NS" --type=merge \
-        -p "{\"spec\":{\"deployment\":{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"grafana\",\"env\":[{\"name\":\"GF_INSTALL_PLUGINS\",\"value\":\"${new_plugins}\"}]}]}}}}}}" > /dev/null; then
-        print_ok "grafana-polystat-panel plugin configured"
-    else
-        print_warn "Failed to patch the Grafana CR — install grafana-polystat-panel manually on your Grafana instance"
+    print_warn "Online plugin install failed (airgap?) — installing from local zip..."
+    local zip_file="${SCRIPT_DIR}/grafana-polystat-panel.zip"
+    if [ ! -f "$zip_file" ]; then
+        print_error "Local plugin zip not found: ${zip_file}"
         return 1
     fi
 
-    print_info "  Grafana pod will restart to install the plugin — waiting..."
+    oc cp "$zip_file" "$GRAFANA_NS/$grafana_pod:/tmp/grafana-polystat-panel.zip" -c grafana
+    oc exec "$grafana_pod" -n "$GRAFANA_NS" -c grafana -- \
+        unzip -o -q /tmp/grafana-polystat-panel.zip -d /var/lib/grafana/plugins/
+    oc exec "$grafana_pod" -n "$GRAFANA_NS" -c grafana -- \
+        rm -f /tmp/grafana-polystat-panel.zip
+
+    oc delete pod "$grafana_pod" -n "$GRAFANA_NS" --grace-period=10 > /dev/null
+    print_info "Grafana pod restarting to load the plugin..."
     local deploy_name
     deploy_name=$(oc get deployment -n "$GRAFANA_NS" -l app="${grafana_name}" \
         -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "${grafana_name}-deployment")
     oc rollout status "deployment/${deploy_name}" -n "$GRAFANA_NS" --timeout=180s 2>/dev/null || true
+    print_ok "grafana-polystat-panel plugin installed (airgap)"
     return 0
 }
 
