@@ -269,7 +269,9 @@ step_namespaces() {
         if oc get namespace "$NS" &>/dev/null; then
             print_ok "Namespace $NS 이미 존재합니다 — 건너뜀"
         else
+            print_info "Namespace ${NS} 생성 중..."
             oc new-project "$NS" > /dev/null
+            oc get namespace "$NS" &>/dev/null
             print_ok "Namespace $NS 생성됨"
         fi
         # namespaceSelector matchLabels에서 사용하는 레이블 설정
@@ -339,7 +341,9 @@ spec:
     }
 EOF
         echo "생성된 파일: ${nad_file}"
+        print_info "NAD ${NAD_NAME} 생성 중 (namespace: ${NS})..."
         oc apply -f "$nad_file"
+        oc get network-attachment-definition "$NAD_NAME" -n "$NS" &>/dev/null
         print_ok "NAD ${NAD_NAME} 등록됨 (namespace: ${NS})"
     done
 }
@@ -375,7 +379,9 @@ spec:
     - Ingress
 EOF
             echo "생성된 파일: multi-netpol-deny-all-${NS}.yaml"
+            print_info "MultiNetworkPolicy deny-all 생성 중 (namespace: ${NS})..."
             oc apply -f "multi-netpol-deny-all-${NS}.yaml"
+            oc get multi-networkpolicy deny-all -n "$NS" &>/dev/null
         else
             cat > "netpol-deny-all-${NS}.yaml" <<EOF
 apiVersion: networking.k8s.io/v1
@@ -389,7 +395,9 @@ spec:
     - Ingress
 EOF
             echo "생성된 파일: netpol-deny-all-${NS}.yaml"
+            print_info "NetworkPolicy deny-all 생성 중 (namespace: ${NS})..."
             oc apply -f "netpol-deny-all-${NS}.yaml"
+            oc get networkpolicy deny-all -n "$NS" &>/dev/null
         fi
         print_ok "deny-all 적용됨 (namespace: ${NS})"
     done
@@ -422,7 +430,9 @@ spec:
         - podSelector: {}
 EOF
             echo "생성된 파일: multi-netpol-allow-same-network-${NS}.yaml"
+            print_info "MultiNetworkPolicy allow-same-network 생성 중 (namespace: ${NS})..."
             oc apply -f "multi-netpol-allow-same-network-${NS}.yaml"
+            oc get multi-networkpolicy allow-same-network -n "$NS" &>/dev/null
         else
             cat > "netpol-allow-same-network-${NS}.yaml" <<EOF
 apiVersion: networking.k8s.io/v1
@@ -439,7 +449,9 @@ spec:
         - podSelector: {}
 EOF
             echo "생성된 파일: netpol-allow-same-network-${NS}.yaml"
+            print_info "NetworkPolicy allow-same-network 생성 중 (namespace: ${NS})..."
             oc apply -f "netpol-allow-same-network-${NS}.yaml"
+            oc get networkpolicy allow-same-network -n "$NS" &>/dev/null
         fi
         print_ok "allow-same-network 적용됨 (namespace: ${NS})"
     done
@@ -473,7 +485,9 @@ spec:
               kubernetes.io/metadata.name: ${NS1}
 EOF
         echo "생성된 파일: multi-netpol-allow-from-ns1-${NS2}.yaml"
+        print_info "MultiNetworkPolicy allow-access-from-project1 생성 중 (namespace: ${NS2})..."
         oc apply -f "multi-netpol-allow-from-ns1-${NS2}.yaml"
+        oc get multi-networkpolicy allow-access-from-project1 -n "$NS2" &>/dev/null
     else
         cat > "netpol-allow-from-ns1-${NS2}.yaml" <<EOF
 apiVersion: networking.k8s.io/v1
@@ -492,7 +506,9 @@ spec:
               kubernetes.io/metadata.name: ${NS1}
 EOF
         echo "생성된 파일: netpol-allow-from-ns1-${NS2}.yaml"
+        print_info "NetworkPolicy allow-access-from-project1 생성 중 (namespace: ${NS2})..."
         oc apply -f "netpol-allow-from-ns1-${NS2}.yaml"
+        oc get networkpolicy allow-access-from-project1 -n "$NS2" &>/dev/null
     fi
     print_ok "allow-access-from-project1 적용됨 (namespace: ${NS2}, 허용 소스: ${NS1})"
 }
@@ -524,7 +540,9 @@ step_vms() {
             sed 's/runStrategy: Always/runStrategy: Halted/' | \
             sed 's/  running: false/  runStrategy: Halted/' > "${VM_NAME}-${NS}.yaml"
         echo "생성된 파일: ${VM_NAME}-${NS}.yaml"
+        print_info "VM ${VM_NAME} 생성 중 (namespace: ${NS})..."
         oc apply -n "$NS" -f "${VM_NAME}-${NS}.yaml"
+        oc get vm "$VM_NAME" -n "$NS" &>/dev/null
         ensure_runstrategy "$VM_NAME" "$NS"
 
         if [ "$POLICY_MODE" = "2" ]; then
@@ -600,7 +618,9 @@ spec:
         - Ingress
 EOF
         echo "생성된 파일: consoleyamlsample-multi-deny-all.yaml"
+        print_info "ConsoleYAMLSample poc-multi-netpol-deny-all 생성 중..."
         oc apply -f consoleyamlsample-multi-deny-all.yaml
+        oc get consoleyamlsample poc-multi-netpol-deny-all &>/dev/null
         print_ok "ConsoleYAMLSample poc-multi-netpol-deny-all 등록됨"
         return 0
     fi
@@ -629,7 +649,9 @@ spec:
         - Ingress
 EOF
     echo "생성된 파일: consoleyamlsample-deny-all.yaml"
+    print_info "ConsoleYAMLSample poc-netpol-deny-all 생성 중..."
     oc apply -f consoleyamlsample-deny-all.yaml
+    oc get consoleyamlsample poc-netpol-deny-all &>/dev/null
     print_ok "ConsoleYAMLSample poc-netpol-deny-all 등록됨"
 
     # Allow Same Network 샘플
@@ -659,7 +681,9 @@ spec:
             - podSelector: {}
 EOF
     echo "생성된 파일: consoleyamlsample-allow-same-network.yaml"
+    print_info "ConsoleYAMLSample poc-netpol-allow-same-network 생성 중..."
     oc apply -f consoleyamlsample-allow-same-network.yaml
+    oc get consoleyamlsample poc-netpol-allow-same-network &>/dev/null
     print_ok "ConsoleYAMLSample poc-netpol-allow-same-network 등록됨"
 
     # Allow Access From Project1 샘플
@@ -691,7 +715,9 @@ spec:
                   kubernetes.io/metadata.name: ${NS1}
 EOF
     echo "생성된 파일: consoleyamlsample-allow-from-project1.yaml"
+    print_info "ConsoleYAMLSample poc-netpol-allow-from-project1 생성 중..."
     oc apply -f consoleyamlsample-allow-from-project1.yaml
+    oc get consoleyamlsample poc-netpol-allow-from-project1 &>/dev/null
     print_ok "ConsoleYAMLSample poc-netpol-allow-from-project1 등록됨"
 }
 
