@@ -1,0 +1,125 @@
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: secondary-net-migration-sa
+  namespace: openshift-cnv
+---
+# 1. API 호출 권한 (RBAC: 마이그레이션 객체 생성 허용)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: secondary-net-migration-binding
+subjects:
+- kind: ServiceAccount
+  name: secondary-net-migration-sa
+  namespace: openshift-cnv
+roleRef:
+  kind: ClusterRole
+  name: kubevirt.io:migrate
+  apiGroup: rbac.authorization.k8s.io
+---
+# 2. 파드 실행 보안 권한 (SCC: privileged 및 hostNetwork 사용 허용)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: secondary-net-migration-scc-binding
+  namespace: openshift-cnv
+subjects:
+- kind: ServiceAccount
+  name: secondary-net-migration-sa
+  namespace: openshift-cnv
+roleRef:
+  kind: ClusterRole
+  name: system:openshift:scc:privileged
+  apiGroup: rbac.authorization.k8s.io
+---
+---
+# VMI 전체 조회를 위한 ClusterRole 생성
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: secondary-net-migration-vmi-reader
+rules:
+- apiGroups: ["kubevirt.io"]
+  resources: ["virtualmachineinstances"]
+  verbs: ["get", "list", "watch"]
+---
+# ServiceAccount에 VMI 조회 권한 바인딩
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: secondary-net-migration-vmi-reader-binding
+subjects:
+- kind: ServiceAccount
+  name: secondary-net-migration-sa
+  namespace: openshift-cnv
+roleRef:
+  kind: ClusterRole
+  name: secondary-net-migration-vmi-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: secondary-net-monitor
+  namespace: openshift-cnv
+spec:
+  selector:
+    matchLabels:
+      app: secondary-net-monitor
+  template:
+    metadata:
+      labels:
+        app: secondary-net-monitor
+    spec:
+      serviceAccountName: secondary-net-migration-sa
+      hostNetwork: true
+      containers:
+      - name: monitor
+        image: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:212961da81a346bfd96e95d8b11d481b068c214a0c20285a223403c622d1269f
+          #image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
+        command:
+        - /bin/bash
+        - -c
+        - |
+          TARGET_IF="ens1f0np0" # 감시 대상 보조 NIC 명칭
+          NODE_NAME=$NODE_NAME
+
+          echo "Monitoring $TARGET_IF on $NODE_NAME..."
+
+          # ip monitor link로 보조 인터페이스 다운 상태 감시
+          ip monitor link dev $TARGET_IF | while read -r line; do
+            if echo "$line" | grep -q "state DOWN"; then
+              echo "[ALERT] Interface $TARGET_IF is DOWN on $NODE_NAME! Triggering Migration..."
+
+              # 해당 노드에서 구동 중인 VMI 목록 추출
+              VMIS=$(oc get vmi -A -o jsonpath="{range .items[?(@.status.nodeName=='$NODE_NAME')]}{.metadata.namespace}{'/'}{.metadata.name}{'\n'}{end}")
+
+              for VMI in $VMIS; do
+                NS=$(echo $VMI | cut -d'/' -f1)
+                VM_NAME=$(echo $VMI | cut -d'/' -f2)
+                MIGRATION_NAME="auto-migrate-${VM_NAME}-$(date +%s)"
+
+                # VirtualMachineInstanceMigration 객체 생성
+                cat <<EOF | oc create -f -
+          apiVersion: kubevirt.io/v1
+          kind: VirtualMachineInstanceMigration
+          metadata:
+            name: ${MIGRATION_NAME}
+            namespace: ${NS}
+          spec:
+            vmiName: ${VM_NAME}
+          EOF
+              done
+            fi
+          done
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        securityContext:
+          privileged: true
+
+
