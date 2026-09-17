@@ -14,7 +14,7 @@
 # Usage: ./download.sh
 # =============================================================================
 
-set -euo pipefail
+set -xeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOWNLOAD_DIR="${SCRIPT_DIR}/downloads"

@@ -3,7 +3,7 @@
 # create-10vms.sh — poc template 기반 VM 10개 생성
 # =============================================================================
 
-set -euo pipefail
+set -xeuo pipefail
 
 RED='\033[0;31m'; GREEN='\033[0;32m'
 YELLOW='\033[1;33m'; BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033[0m'

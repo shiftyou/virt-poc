@@ -1,4 +1,5 @@
 #!/bin/bash
+set -x
 
 # List of hosts to monitor (space-separated)
 HOSTS=("google.com" "naver.com" "github.com" "example.com")

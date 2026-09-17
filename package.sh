@@ -9,7 +9,7 @@
 # Usage: ./package.sh
 # =============================================================================
 
-set -euo pipefail
+set -xeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="${SCRIPT_DIR}"
@@ -92,7 +92,7 @@ create_install_script() {
 # Air-gapped installation script for OpenShift Virtualization POC
 # =============================================================================
 
-set -euo pipefail
+set -xeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="${SCRIPT_DIR}"

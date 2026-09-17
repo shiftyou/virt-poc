@@ -3,7 +3,7 @@
 # delete-10vms.sh — VM 10개 및 Namespace 삭제
 # =============================================================================
 
-set -euo pipefail
+set -xeuo pipefail
 
 RED='\033[0;31m'; GREEN='\033[0;32m'
 YELLOW='\033[1;33m'; BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033[0m'

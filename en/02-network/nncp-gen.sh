@@ -15,7 +15,7 @@
 #   NET_TYPE: 1=Linux Bridge, 2=Linux Bridge+VLAN, 3=OVS, 4=Bond, 5=VLAN
 # =============================================================================
 
-set -euo pipefail
+set -xeuo pipefail
 trap 'echo -e "\n\033[0;31m[ERROR]\033[0m Command failed at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

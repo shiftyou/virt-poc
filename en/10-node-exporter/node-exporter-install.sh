@@ -1,4 +1,5 @@
 #!/bin/bash
+set -x
 
 # Set the version from an environment variable, or default to 1.10.2
 VERSION=${VERSION:-"1.10.2"}
