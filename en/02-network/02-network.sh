@@ -11,9 +11,7 @@
 #
 # NNCP (when creating a new one):
 #   1. Linux Bridge        — type: linux-bridge
-#   2. OVS Bridge          — type: ovs-bridge + OVN localnet
-#   3. Bond + Linux Bridge — type: bond + linux-bridge
-#   4. VLAN + Linux Bridge — type: vlan + linux-bridge
+#   2. OVS Bridge          — ovn.bridge-mappings (OVN localnet)
 #
 # Usage: ./02-network.sh
 # =============================================================================
@@ -396,7 +394,6 @@ _apply_nncp_yaml() {
 # =============================================================================
 _create_nncp() {
     local net_type="$1"
-    local mtu=""
 
     echo ""
     print_step "Create new NNCP"
@@ -407,43 +404,28 @@ _create_nncp() {
     echo -e "     ${DIM}NAD: cnv-bridge / simplest for test and development${NC}"
     echo ""
     echo -e "  ${GREEN}2)${NC} OVS Bridge (OVN Localnet)"
-    echo -e "     type: ovs-bridge + ovn.bridge-mappings"
+    echo -e "     ovn.bridge-mappings — map localnet to existing OVS bridge (e.g. br-ex)"
     echo -e "     ${DIM}NAD: ovn-k8s-cni-overlay / OVN port security and ACL${NC}"
     echo ""
-    echo -e "  ${GREEN}3)${NC} Bond + Linux Bridge"
-    echo -e "     type: bond + linux-bridge — bond two NICs, then attach to a bridge"
-    echo -e "     ${DIM}NAD: cnv-bridge / NIC HA (active-backup or LACP)${NC}"
-    echo ""
-    echo -e "  ${GREEN}4)${NC} VLAN + Linux Bridge"
-    echo -e "     type: vlan + linux-bridge — VLAN sub-interface as a bridge port"
-    echo -e "     ${DIM}NAD: cnv-bridge / single VLAN access (tagged or access)${NC}"
-    echo ""
-    read -r -p "  Select NNCP type [1-4]: " _iface_sel
+    read -r -p "  Select NNCP type [1-2]: " _iface_sel
     case "$_iface_sel" in
         1) NNCP_IFACE_TYPE="linux-bridge" ;;
         2) NNCP_IFACE_TYPE="ovs-bridge" ;;
-        3) NNCP_IFACE_TYPE="bond" ;;
-        4) NNCP_IFACE_TYPE="vlan" ;;
         *)
-            print_error "Please enter 1–4."
+            print_error "Please enter 1 or 2."
             exit 1
             ;;
     esac
 
-    echo ""
-    _list_worker_nics
-    echo ""
-
     case "$NNCP_IFACE_TYPE" in
+        linux-bridge)
+            echo ""
+            _list_worker_nics
+            echo ""
+            ;;
         ovs-bridge)
-            [ "$BRIDGE_NAME" = "br1" ] || [ "$BRIDGE_NAME" = "br-poc" ] && BRIDGE_NAME="ovs-br-poc"
-            NNCP_NAME="${BRIDGE_NAME}-nncp"
-            ;;
-        bond)
-            NNCP_NAME="${NNCP_NAME:-${BRIDGE_NAME}-bond-nncp}"
-            ;;
-        vlan)
-            NNCP_NAME="${NNCP_NAME:-${BRIDGE_NAME}-vlan-nncp}"
+            BRIDGE_NAME="br-ex"
+            NNCP_NAME="ovs-br-ex-mapping"
             ;;
     esac
 
@@ -453,24 +435,9 @@ _create_nncp() {
     read -r -p "  Enter Bridge name [${BRIDGE_NAME}]: " _input
     [ -n "$_input" ] && BRIDGE_NAME="$_input"
 
-    read -r -p "  Enter physical NIC [${BRIDGE_INTERFACE}]: " _input
-    [ -n "$_input" ] && BRIDGE_INTERFACE="$_input"
-
-    if [ "$NNCP_IFACE_TYPE" = "bond" ]; then
-        local _def_nic2="${BOND_INTERFACE_2:-ens5}"
-        read -r -p "  Enter second Bond NIC [${_def_nic2}]: " _input
-        BOND_INTERFACE_2="${_input:-$_def_nic2}"
-        read -r -p "  Enter Bond name [${BOND_NAME}]: " _input
-        [ -n "$_input" ] && BOND_NAME="$_input"
-        echo ""
-        echo -e "  Bond mode:"
-        echo -e "    ${GREEN}1)${NC} active-backup  ${DIM}no extra switch config${NC}"
-        echo -e "    ${GREEN}2)${NC} 802.3ad (LACP)  ${DIM}switch LACP required${NC}"
-        read -r -p "  Select [1-2, default: 1]: " _bond_sel
-        case "${_bond_sel:-1}" in
-            2) BOND_MODE="802.3ad" ;;
-            *) BOND_MODE="active-backup" ;;
-        esac
+    if [ "$NNCP_IFACE_TYPE" = "linux-bridge" ]; then
+        read -r -p "  Enter physical NIC [${BRIDGE_INTERFACE}]: " _input
+        [ -n "$_input" ] && BRIDGE_INTERFACE="$_input"
     fi
 
     if [ "$NNCP_IFACE_TYPE" = "ovs-bridge" ]; then
@@ -478,16 +445,10 @@ _create_nncp() {
         [ -n "$_input" ] && LOCALNET_NAME="$_input"
     fi
 
-    if [ "$NNCP_IFACE_TYPE" = "vlan" ]; then
-        read -r -p "  Enter VLAN ID [${VLAN_ID}]: " _input
-        [ -n "$_input" ] && VLAN_ID="$_input"
-        if [ -z "$VLAN_ID" ]; then
-            print_error "VLAN + Linux Bridge requires a VLAN ID."
-            exit 1
-        fi
+    local mtu=""
+    if [ "$NNCP_IFACE_TYPE" = "linux-bridge" ]; then
+        read -r -p "  Set MTU? (leave blank for default): " mtu
     fi
-
-    read -r -p "  Set MTU? (leave blank for default): " mtu
 
     case "$NNCP_IFACE_TYPE" in
         linux-bridge)
@@ -522,8 +483,7 @@ EOF
             } > "nncp-${NNCP_NAME}.yaml"
             ;;
         ovs-bridge)
-            {
-                cat <<EOF
+            cat > "nncp-${NNCP_NAME}.yaml" <<EOF
 apiVersion: nmstate.io/v1
 kind: NodeNetworkConfigurationPolicy
 metadata:
@@ -532,114 +492,12 @@ spec:
   nodeSelector:
     node-role.kubernetes.io/worker: ''
   desiredState:
-    interfaces:
-      - name: ${BRIDGE_NAME}
-        description: OVS bridge with ${BRIDGE_INTERFACE} as a port
-        type: ovs-bridge
-        state: up
-EOF
-                [ -n "${mtu}" ] && echo "        mtu: ${mtu}"
-                cat <<EOF
-        bridge:
-          options:
-            stp: false
-          port:
-            - name: ${BRIDGE_INTERFACE}
     ovn:
       bridge-mappings:
         - localnet: ${LOCALNET_NAME}
           bridge: ${BRIDGE_NAME}
           state: present
 EOF
-            } > "nncp-${NNCP_NAME}.yaml"
-            ;;
-        bond)
-            {
-                cat <<EOF
-apiVersion: nmstate.io/v1
-kind: NodeNetworkConfigurationPolicy
-metadata:
-  name: ${NNCP_NAME}
-spec:
-  nodeSelector:
-    node-role.kubernetes.io/worker: ''
-  desiredState:
-    interfaces:
-      - name: ${BOND_NAME}
-        description: Bond (${BOND_MODE}) of ${BRIDGE_INTERFACE} + ${BOND_INTERFACE_2}
-        type: bond
-        state: up
-        ipv4:
-          enabled: false
-        ipv6:
-          enabled: false
-        link-aggregation:
-          mode: ${BOND_MODE}
-          port:
-            - ${BRIDGE_INTERFACE}
-            - ${BOND_INTERFACE_2}
-      - name: ${BRIDGE_NAME}
-        description: Linux bridge with ${BOND_NAME} as a port
-        type: linux-bridge
-        state: up
-EOF
-                [ -n "${mtu}" ] && echo "        mtu: ${mtu}"
-                cat <<EOF
-        ipv4:
-          enabled: false
-        ipv6:
-          enabled: false
-        bridge:
-          options:
-            stp:
-              enabled: false
-EOF
-                _emit_linux_bridge_port "$BOND_NAME" "$net_type"
-            } > "nncp-${NNCP_NAME}.yaml"
-            ;;
-        vlan)
-            vlan_iface="${BRIDGE_INTERFACE}.${VLAN_ID}"
-            {
-                cat <<EOF
-apiVersion: nmstate.io/v1
-kind: NodeNetworkConfigurationPolicy
-metadata:
-  name: ${NNCP_NAME}
-spec:
-  nodeSelector:
-    node-role.kubernetes.io/worker: ''
-  desiredState:
-    interfaces:
-      - name: ${vlan_iface}
-        description: VLAN ${VLAN_ID} on ${BRIDGE_INTERFACE}
-        type: vlan
-        state: up
-        vlan:
-          base-iface: ${BRIDGE_INTERFACE}
-          id: ${VLAN_ID}
-        ipv4:
-          enabled: false
-        ipv6:
-          enabled: false
-      - name: ${BRIDGE_NAME}
-        description: Linux bridge with ${vlan_iface} as a port
-        type: linux-bridge
-        state: up
-EOF
-                [ -n "${mtu}" ] && echo "        mtu: ${mtu}"
-                cat <<EOF
-        ipv4:
-          enabled: false
-        ipv6:
-          enabled: false
-        bridge:
-          options:
-            stp:
-              enabled: false
-          port:
-            - name: ${vlan_iface}
-EOF
-            } > "nncp-${NNCP_NAME}.yaml"
             ;;
     esac
 
@@ -691,7 +549,7 @@ step_nncp() {
 
         echo "──────────────────────────────────────────────────────────────────────────────"
         echo ""
-        echo "  0) Create a new NNCP (Linux Bridge / OVS / Bond / VLAN)"
+        echo "  0) Create a new NNCP (Linux Bridge / OVS Bridge)"
         echo ""
 
         local selection

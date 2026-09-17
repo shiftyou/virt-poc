@@ -11,9 +11,7 @@
 #
 # NNCP (새 생성 시):
 #   1. Linux Bridge        — type: linux-bridge
-#   2. OVS Bridge          — type: ovs-bridge + OVN localnet
-#   3. Bond + Linux Bridge — type: bond + linux-bridge
-#   4. VLAN + Linux Bridge — type: vlan + linux-bridge
+#   2. OVS Bridge          — ovn.bridge-mappings (OVN localnet)
 #
 # 사용법: ./02-network.sh
 # =============================================================================
@@ -396,7 +394,6 @@ _apply_nncp_yaml() {
 # =============================================================================
 _create_nncp() {
     local net_type="$1"
-    local mtu=""
 
     echo ""
     print_step "새 NNCP 생성"
@@ -407,43 +404,28 @@ _create_nncp() {
     echo -e "     ${DIM}NAD: cnv-bridge / 테스트·개발에 가장 단순${NC}"
     echo ""
     echo -e "  ${GREEN}2)${NC} OVS Bridge (OVN Localnet)"
-    echo -e "     type: ovs-bridge + ovn.bridge-mappings"
+    echo -e "     ovn.bridge-mappings — 기존 OVS 브릿지(예: br-ex)에 localnet 매핑"
     echo -e "     ${DIM}NAD: ovn-k8s-cni-overlay / OVN port security·ACL${NC}"
     echo ""
-    echo -e "  ${GREEN}3)${NC} Bond + Linux Bridge"
-    echo -e "     type: bond + linux-bridge — NIC 2개를 본딩한 뒤 브릿지에 연결"
-    echo -e "     ${DIM}NAD: cnv-bridge / NIC HA (active-backup 또는 LACP)${NC}"
-    echo ""
-    echo -e "  ${GREEN}4)${NC} VLAN + Linux Bridge"
-    echo -e "     type: vlan + linux-bridge — VLAN 서브인터페이스를 브릿지 포트로 연결"
-    echo -e "     ${DIM}NAD: cnv-bridge / 단일 VLAN access (스위치 Access 또는 tagged)${NC}"
-    echo ""
-    read -r -p "  NNCP 유형 선택 [1-4]: " _iface_sel
+    read -r -p "  NNCP 유형 선택 [1-2]: " _iface_sel
     case "$_iface_sel" in
         1) NNCP_IFACE_TYPE="linux-bridge" ;;
         2) NNCP_IFACE_TYPE="ovs-bridge" ;;
-        3) NNCP_IFACE_TYPE="bond" ;;
-        4) NNCP_IFACE_TYPE="vlan" ;;
         *)
-            print_error "1–4를 입력해 주세요."
+            print_error "1 또는 2를 입력해 주세요."
             exit 1
             ;;
     esac
 
-    echo ""
-    _list_worker_nics
-    echo ""
-
     case "$NNCP_IFACE_TYPE" in
+        linux-bridge)
+            echo ""
+            _list_worker_nics
+            echo ""
+            ;;
         ovs-bridge)
-            [ "$BRIDGE_NAME" = "br1" ] || [ "$BRIDGE_NAME" = "br-poc" ] && BRIDGE_NAME="ovs-br-poc"
-            NNCP_NAME="${BRIDGE_NAME}-nncp"
-            ;;
-        bond)
-            NNCP_NAME="${NNCP_NAME:-${BRIDGE_NAME}-bond-nncp}"
-            ;;
-        vlan)
-            NNCP_NAME="${NNCP_NAME:-${BRIDGE_NAME}-vlan-nncp}"
+            BRIDGE_NAME="br-ex"
+            NNCP_NAME="ovs-br-ex-mapping"
             ;;
     esac
 
@@ -453,24 +435,9 @@ _create_nncp() {
     read -r -p "  Bridge 이름 입력 [${BRIDGE_NAME}]: " _input
     [ -n "$_input" ] && BRIDGE_NAME="$_input"
 
-    read -r -p "  물리 NIC 입력 [${BRIDGE_INTERFACE}]: " _input
-    [ -n "$_input" ] && BRIDGE_INTERFACE="$_input"
-
-    if [ "$NNCP_IFACE_TYPE" = "bond" ]; then
-        local _def_nic2="${BOND_INTERFACE_2:-ens5}"
-        read -r -p "  Bond 두 번째 NIC 입력 [${_def_nic2}]: " _input
-        BOND_INTERFACE_2="${_input:-$_def_nic2}"
-        read -r -p "  Bond 이름 입력 [${BOND_NAME}]: " _input
-        [ -n "$_input" ] && BOND_NAME="$_input"
-        echo ""
-        echo -e "  Bond 모드:"
-        echo -e "    ${GREEN}1)${NC} active-backup  ${DIM}스위치 설정 불필요${NC}"
-        echo -e "    ${GREEN}2)${NC} 802.3ad (LACP)  ${DIM}스위치 LACP 필요${NC}"
-        read -r -p "  선택 [1-2, 기본값: 1]: " _bond_sel
-        case "${_bond_sel:-1}" in
-            2) BOND_MODE="802.3ad" ;;
-            *) BOND_MODE="active-backup" ;;
-        esac
+    if [ "$NNCP_IFACE_TYPE" = "linux-bridge" ]; then
+        read -r -p "  물리 NIC 입력 [${BRIDGE_INTERFACE}]: " _input
+        [ -n "$_input" ] && BRIDGE_INTERFACE="$_input"
     fi
 
     if [ "$NNCP_IFACE_TYPE" = "ovs-bridge" ]; then
@@ -478,16 +445,10 @@ _create_nncp() {
         [ -n "$_input" ] && LOCALNET_NAME="$_input"
     fi
 
-    if [ "$NNCP_IFACE_TYPE" = "vlan" ]; then
-        read -r -p "  VLAN ID 입력 [${VLAN_ID}]: " _input
-        [ -n "$_input" ] && VLAN_ID="$_input"
-        if [ -z "$VLAN_ID" ]; then
-            print_error "VLAN + Linux Bridge에는 VLAN ID가 필요합니다."
-            exit 1
-        fi
+    local mtu=""
+    if [ "$NNCP_IFACE_TYPE" = "linux-bridge" ]; then
+        read -r -p "  MTU를 설정하시겠습니까? (기본값을 사용하려면 비워두세요): " mtu
     fi
-
-    read -r -p "  MTU를 설정하시겠습니까? (기본값을 사용하려면 비워두세요): " mtu
 
     case "$NNCP_IFACE_TYPE" in
         linux-bridge)
@@ -522,8 +483,7 @@ EOF
             } > "nncp-${NNCP_NAME}.yaml"
             ;;
         ovs-bridge)
-            {
-                cat <<EOF
+            cat > "nncp-${NNCP_NAME}.yaml" <<EOF
 apiVersion: nmstate.io/v1
 kind: NodeNetworkConfigurationPolicy
 metadata:
@@ -532,114 +492,12 @@ spec:
   nodeSelector:
     node-role.kubernetes.io/worker: ''
   desiredState:
-    interfaces:
-      - name: ${BRIDGE_NAME}
-        description: OVS bridge with ${BRIDGE_INTERFACE} as a port
-        type: ovs-bridge
-        state: up
-EOF
-                [ -n "${mtu}" ] && echo "        mtu: ${mtu}"
-                cat <<EOF
-        bridge:
-          options:
-            stp: false
-          port:
-            - name: ${BRIDGE_INTERFACE}
     ovn:
       bridge-mappings:
         - localnet: ${LOCALNET_NAME}
           bridge: ${BRIDGE_NAME}
           state: present
 EOF
-            } > "nncp-${NNCP_NAME}.yaml"
-            ;;
-        bond)
-            {
-                cat <<EOF
-apiVersion: nmstate.io/v1
-kind: NodeNetworkConfigurationPolicy
-metadata:
-  name: ${NNCP_NAME}
-spec:
-  nodeSelector:
-    node-role.kubernetes.io/worker: ''
-  desiredState:
-    interfaces:
-      - name: ${BOND_NAME}
-        description: Bond (${BOND_MODE}) of ${BRIDGE_INTERFACE} + ${BOND_INTERFACE_2}
-        type: bond
-        state: up
-        ipv4:
-          enabled: false
-        ipv6:
-          enabled: false
-        link-aggregation:
-          mode: ${BOND_MODE}
-          port:
-            - ${BRIDGE_INTERFACE}
-            - ${BOND_INTERFACE_2}
-      - name: ${BRIDGE_NAME}
-        description: Linux bridge with ${BOND_NAME} as a port
-        type: linux-bridge
-        state: up
-EOF
-                [ -n "${mtu}" ] && echo "        mtu: ${mtu}"
-                cat <<EOF
-        ipv4:
-          enabled: false
-        ipv6:
-          enabled: false
-        bridge:
-          options:
-            stp:
-              enabled: false
-EOF
-                _emit_linux_bridge_port "$BOND_NAME" "$net_type"
-            } > "nncp-${NNCP_NAME}.yaml"
-            ;;
-        vlan)
-            vlan_iface="${BRIDGE_INTERFACE}.${VLAN_ID}"
-            {
-                cat <<EOF
-apiVersion: nmstate.io/v1
-kind: NodeNetworkConfigurationPolicy
-metadata:
-  name: ${NNCP_NAME}
-spec:
-  nodeSelector:
-    node-role.kubernetes.io/worker: ''
-  desiredState:
-    interfaces:
-      - name: ${vlan_iface}
-        description: VLAN ${VLAN_ID} on ${BRIDGE_INTERFACE}
-        type: vlan
-        state: up
-        vlan:
-          base-iface: ${BRIDGE_INTERFACE}
-          id: ${VLAN_ID}
-        ipv4:
-          enabled: false
-        ipv6:
-          enabled: false
-      - name: ${BRIDGE_NAME}
-        description: Linux bridge with ${vlan_iface} as a port
-        type: linux-bridge
-        state: up
-EOF
-                [ -n "${mtu}" ] && echo "        mtu: ${mtu}"
-                cat <<EOF
-        ipv4:
-          enabled: false
-        ipv6:
-          enabled: false
-        bridge:
-          options:
-            stp:
-              enabled: false
-          port:
-            - name: ${vlan_iface}
-EOF
-            } > "nncp-${NNCP_NAME}.yaml"
             ;;
     esac
 
@@ -691,7 +549,7 @@ step_nncp() {
 
         echo "──────────────────────────────────────────────────────────────────────────────"
         echo ""
-        echo "  0) 새 NNCP 생성 (Linux Bridge / OVS / Bond / VLAN 선택)"
+        echo "  0) 새 NNCP 생성 (Linux Bridge / OVS Bridge 선택)"
         echo ""
 
         local selection
