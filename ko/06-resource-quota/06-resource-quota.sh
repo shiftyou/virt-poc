@@ -222,38 +222,46 @@ step_namespace() {
 step_enable_aaq() {
     print_step "2/5  ApplicationAwareQuota 활성화 (HyperConverged CR)"
 
+    print_info "현재 enableApplicationAwareQuota 설정 확인 중..."
     local aaq_enabled
     aaq_enabled=$(oc get hyperconverged kubevirt-hyperconverged -n openshift-cnv \
         -o jsonpath='{.spec.featureGates.enableApplicationAwareQuota}' 2>/dev/null || true)
+    print_info "  enableApplicationAwareQuota = ${aaq_enabled:-<미설정>}"
 
     if [ "$aaq_enabled" = "true" ]; then
-        print_ok "ApplicationAwareQuota 이미 활성화됨 — 건너뜀"
+        print_ok "ApplicationAwareQuota 이미 활성화됨"
     else
         print_info "HyperConverged CR에서 enableApplicationAwareQuota 활성화 중..."
         oc patch hyperconverged kubevirt-hyperconverged -n openshift-cnv \
             --type=merge \
             -p '{"spec":{"featureGates":{"enableApplicationAwareQuota":true}}}'
         print_ok "ApplicationAwareQuota 활성화됨"
+    fi
 
-        print_info "AAQ 컨트롤러가 준비될 때까지 대기 중..."
-        local retries=0
-        while [ $retries -lt 30 ]; do
-            if oc get deployment -n openshift-cnv -l app=aaq-controller &>/dev/null 2>&1; then
-                if oc rollout status deployment -n openshift-cnv -l app=aaq-controller --timeout=10s &>/dev/null 2>&1; then
-                    break
-                fi
-            fi
-            retries=$((retries + 1))
-            sleep 5
-        done
+    print_info "AAQ CRD 사용 가능 여부 확인 중..."
+    if oc get crd applicationawareresourcequotas.aaq.kubevirt.io &>/dev/null 2>&1; then
+        print_ok "AAQ CRD 사용 가능"
+        return
+    fi
 
+    print_info "AAQ CRD가 사용 가능해질 때까지 대기 중..."
+    local retries=0
+    while [ $retries -lt 60 ]; do
         if oc get crd applicationawareresourcequotas.aaq.kubevirt.io &>/dev/null 2>&1; then
             print_ok "AAQ CRD 사용 가능"
-        else
-            print_warn "AAQ CRD가 아직 사용 가능하지 않습니다 — 잠시 기다립니다"
-            sleep 10
+            return
         fi
-    fi
+        retries=$((retries + 1))
+        if (( retries % 6 == 0 )); then
+            print_info "  AAQ CRD 대기 중... ($((retries * 5))초 경과)"
+        fi
+        sleep 5
+    done
+
+    print_error "5분 후에도 AAQ CRD를 사용할 수 없습니다."
+    print_error "  확인: oc get hyperconverged kubevirt-hyperconverged -n openshift-cnv -o yaml"
+    print_error "  확인: oc get deployment -n openshift-cnv | grep aaq"
+    exit 1
 }
 
 # =============================================================================
