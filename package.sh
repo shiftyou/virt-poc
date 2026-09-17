@@ -9,7 +9,8 @@
 # Usage: ./package.sh
 # =============================================================================
 
-set -xeuo pipefail
+set -euo pipefail
+trap '[[ "$BASH_COMMAND" =~ ^(oc|kubectl|virtctl) ]] && echo "+ $BASH_COMMAND"' DEBUG
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="${SCRIPT_DIR}"
@@ -92,7 +93,8 @@ create_install_script() {
 # Air-gapped installation script for OpenShift Virtualization POC
 # =============================================================================
 
-set -xeuo pipefail
+set -euo pipefail
+trap '[[ "$BASH_COMMAND" =~ ^(oc|kubectl|virtctl) ]] && echo "+ $BASH_COMMAND"' DEBUG
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="${SCRIPT_DIR}"

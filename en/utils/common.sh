@@ -1,5 +1,5 @@
 #!/bin/bash
-set -x
+trap '[[ "$BASH_COMMAND" =~ ^(oc|kubectl|virtctl) ]] && echo "+ $BASH_COMMAND"' DEBUG
 # =============================================================================
 # utils/common.sh
 #

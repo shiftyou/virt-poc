@@ -9,7 +9,8 @@
 # Usage: ./check.sh [--verbose]
 # =============================================================================
 
-set -xuo pipefail
+set -uo pipefail
+trap '[[ "$BASH_COMMAND" =~ ^(oc|kubectl|virtctl) ]] && echo "+ $BASH_COMMAND"' DEBUG
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/env.conf"

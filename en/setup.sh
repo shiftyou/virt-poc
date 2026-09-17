@@ -10,7 +10,8 @@
 # Usage: ./setup.sh
 # =============================================================================
 
-set -xeuo pipefail
+set -euo pipefail
+trap '[[ "$BASH_COMMAND" =~ ^(oc|kubectl|virtctl) ]] && echo "+ $BASH_COMMAND"' DEBUG
 trap 'echo -e "\n\033[0;31m[ERROR]\033[0m Command failed at line ${LINENO}: ${BASH_COMMAND}" >&2' ERR
 
 ENV_FILE="./env.conf"

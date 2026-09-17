@@ -1,5 +1,5 @@
 #!/bin/bash
-set -x
+trap '[[ "$BASH_COMMAND" =~ ^(oc|kubectl|virtctl) ]] && echo "+ $BASH_COMMAND"' DEBUG
 
 # List of hosts to monitor (space-separated)
 HOSTS=("google.com" "naver.com" "github.com" "example.com")

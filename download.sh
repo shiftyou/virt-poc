@@ -14,7 +14,8 @@
 # Usage: ./download.sh
 # =============================================================================
 
-set -xeuo pipefail
+set -euo pipefail
+trap '[[ "$BASH_COMMAND" =~ ^(oc|kubectl|virtctl) ]] && echo "+ $BASH_COMMAND"' DEBUG
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOWNLOAD_DIR="${SCRIPT_DIR}/downloads"

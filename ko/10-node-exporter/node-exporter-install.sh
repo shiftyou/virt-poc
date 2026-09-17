@@ -1,5 +1,5 @@
 #!/bin/bash
-set -x
+trap '[[ "$BASH_COMMAND" =~ ^(oc|kubectl|virtctl) ]] && echo "+ $BASH_COMMAND"' DEBUG
 
 # 환경 변수에서 버전을 설정하거나, 기본값 1.10.2 사용
 VERSION=${VERSION:-"1.10.2"}
