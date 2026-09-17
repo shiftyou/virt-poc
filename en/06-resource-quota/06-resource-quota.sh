@@ -2,10 +2,15 @@
 # =============================================================================
 # 06-resource-quota.sh
 #
-# ResourceQuota practice environment setup
+# ApplicationAwareResourceQuota practice environment setup
 #   1. Create poc-resource-quota namespace
-#   2. Apply ResourceQuota for CPU / Memory / Pod / PVC etc.
-#   3. Deploy 2 VMs (pass within Quota) → attempt 3rd VM creation → rejected for exceeding Quota
+#   2. Enable ApplicationAwareQuota in HyperConverged CR
+#   3. Apply ApplicationAwareResourceQuota for CPU / Memory etc.
+#   4. Deploy 2 VMs (pass within Quota) → attempt 3rd VM creation → rejected for exceeding Quota
+#
+# Standard ResourceQuota counts Pod-level resources, so it cannot directly
+# limit VM resources. ApplicationAwareResourceQuota (AARQ) from
+# OpenShift Virtualization properly accounts for VM resource usage.
 #
 # Usage: ./06-resource-quota.sh
 # =============================================================================
@@ -194,7 +199,7 @@ preflight() {
 # Step 1: Create namespace
 # =============================================================================
 step_namespace() {
-    print_step "1/4  Create namespace (${NS})"
+    print_step "1/5  Create namespace (${NS})"
 
     if oc get namespace "$NS" &>/dev/null; then
         print_ok "Namespace $NS already exists — skipping"
@@ -211,91 +216,115 @@ step_namespace() {
 }
 
 # =============================================================================
-# Step 2: Apply ResourceQuota (values from detect_node_resources)
+# Step 2: Enable ApplicationAwareQuota in HyperConverged CR
+# =============================================================================
+step_enable_aaq() {
+    print_step "2/5  Enable ApplicationAwareQuota (HyperConverged CR)"
+
+    local aaq_enabled
+    aaq_enabled=$(oc get hyperconverged kubevirt-hyperconverged -n openshift-cnv \
+        -o jsonpath='{.spec.featureGates.enableApplicationAwareQuota}' 2>/dev/null || true)
+
+    if [ "$aaq_enabled" = "true" ]; then
+        print_ok "ApplicationAwareQuota already enabled — skipping"
+    else
+        print_info "Enabling enableApplicationAwareQuota in HyperConverged CR..."
+        oc patch hyperconverged kubevirt-hyperconverged -n openshift-cnv \
+            --type=merge \
+            -p '{"spec":{"featureGates":{"enableApplicationAwareQuota":true}}}'
+        print_ok "ApplicationAwareQuota enabled"
+
+        print_info "Waiting for AAQ controller to be ready..."
+        local retries=0
+        while [ $retries -lt 30 ]; do
+            if oc get deployment -n openshift-cnv -l app=aaq-controller &>/dev/null 2>&1; then
+                if oc rollout status deployment -n openshift-cnv -l app=aaq-controller --timeout=10s &>/dev/null 2>&1; then
+                    break
+                fi
+            fi
+            retries=$((retries + 1))
+            sleep 5
+        done
+
+        if oc get crd applicationawareresourcequotas.aaq.kubevirt.io &>/dev/null 2>&1; then
+            print_ok "AAQ CRD is available"
+        else
+            print_warn "AAQ CRD not yet available — it may take a moment"
+            sleep 10
+        fi
+    fi
+}
+
+# =============================================================================
+# Step 3: Apply ApplicationAwareResourceQuota
 # =============================================================================
 step_quota() {
-    print_step "2/4  Apply ResourceQuota (${NS})"
+    print_step "3/5  Apply ApplicationAwareResourceQuota (${NS})"
 
-    cat > resourcequota-poc.yaml <<EOF
-apiVersion: v1
-kind: ResourceQuota
+    cat > aarq-poc.yaml <<EOF
+apiVersion: aaq.kubevirt.io/v1alpha1
+kind: ApplicationAwareResourceQuota
 metadata:
   name: poc-quota
   namespace: ${NS}
 spec:
   hard:
-    pods: "10"
     requests.cpu: "${QUOTA_CPU_REQUEST}"
     limits.cpu: "${QUOTA_CPU_LIMIT}"
     requests.memory: ${QUOTA_MEM_REQUEST}
     limits.memory: ${QUOTA_MEM_LIMIT}
-    persistentvolumeclaims: "10"
-    requests.storage: 100Gi
-    services: "10"
-    services.loadbalancers: "2"
-    services.nodeports: "0"
-    configmaps: "20"
-    secrets: "20"
 EOF
-    echo "Generated file: resourcequota-poc.yaml"
-    print_info "ResourceQuota poc-quota applying..."
-    oc apply -f resourcequota-poc.yaml
+    echo "Generated file: aarq-poc.yaml"
+    print_info "ApplicationAwareResourceQuota poc-quota applying..."
+    oc apply -f aarq-poc.yaml
 
-    print_ok "ResourceQuota poc-quota applied"
+    print_ok "ApplicationAwareResourceQuota poc-quota applied"
     print_info "  requests.cpu: ${QUOTA_CPU_REQUEST} (2 VMs × ${VM_CPU_REQUEST} = $(( VM_CPU_REQUEST_M * 2 ))m pass, 3 VMs = $(( VM_CPU_REQUEST_M * 3 ))m exceed)"
 }
 
 # =============================================================================
-# Step 3: Register ConsoleYAMLSample
+# Step 4: Register ConsoleYAMLSample
 # =============================================================================
 step_consoleyamlsamples() {
-    print_step "3/4  Register ConsoleYAMLSample"
+    print_step "4/5  Register ConsoleYAMLSample"
 
-    cat > consoleyamlsample-resourcequota.yaml <<'EOF'
+    cat > consoleyamlsample-aarq.yaml <<'EOF'
 apiVersion: console.openshift.io/v1
 kind: ConsoleYAMLSample
 metadata:
-  name: poc-resource-quota
+  name: poc-application-aware-resource-quota
 spec:
-  title: "POC ResourceQuota Configuration"
-  description: "Limits resource usage such as CPU, Memory, Pod, and PVC in a namespace. Apply after creating the namespace. New resource creation is rejected when limits are exceeded."
+  title: "POC ApplicationAwareResourceQuota Configuration"
+  description: "VM-aware resource quota for OpenShift Virtualization. Unlike standard ResourceQuota which counts Pod-level resources, AARQ properly accounts for VM resource usage. Enable enableApplicationAwareQuota in HyperConverged CR first."
   targetResource:
-    apiVersion: v1
-    kind: ResourceQuota
+    apiVersion: aaq.kubevirt.io/v1alpha1
+    kind: ApplicationAwareResourceQuota
   yaml: |
-    apiVersion: v1
-    kind: ResourceQuota
+    apiVersion: aaq.kubevirt.io/v1alpha1
+    kind: ApplicationAwareResourceQuota
     metadata:
       name: poc-quota
       namespace: poc-resource-quota    # Change to target namespace
     spec:
       hard:
-        pods: "10"
         requests.cpu: "2000m"
         limits.cpu: "5"
         requests.memory: 4Gi
         limits.memory: 8Gi
-        persistentvolumeclaims: "10"
-        requests.storage: 100Gi
-        services: "10"
-        services.loadbalancers: "2"
-        services.nodeports: "0"
-        configmaps: "20"
-        secrets: "20"
 EOF
-    echo "Generated file: consoleyamlsample-resourcequota.yaml"
-    print_info "ConsoleYAMLSample poc-resource-quota registering..."
-    oc apply -f consoleyamlsample-resourcequota.yaml
-    print_ok "ConsoleYAMLSample poc-resource-quota registered"
+    echo "Generated file: consoleyamlsample-aarq.yaml"
+    print_info "ConsoleYAMLSample poc-application-aware-resource-quota registering..."
+    oc apply -f consoleyamlsample-aarq.yaml
+    print_ok "ConsoleYAMLSample poc-application-aware-resource-quota registered"
 }
 
 # =============================================================================
-# Step 4: Deploy VMs and demonstrate Quota exceeded
+# Step 5: Deploy VMs and demonstrate Quota exceeded
 #   - poc-quota-vm-1, poc-quota-vm-2: created successfully (requests.cpu total 1500m < 2000m)
 #   - poc-quota-vm-3: creation attempt → rejected for exceeding Quota (2250m > 2000m)
 # =============================================================================
 step_vms() {
-    print_step "4/4  Deploy VMs and demonstrate ResourceQuota exceeded"
+    print_step "5/5  Deploy VMs and demonstrate ApplicationAwareResourceQuota exceeded"
 
     # VM 1, 2: create successfully
     for VM in poc-quota-vm-1 poc-quota-vm-2; do
@@ -346,15 +375,14 @@ step_vms() {
 
     print_info ""
     print_info "━━━ Quota exceeded demonstration ━━━"
-    print_info "Current requests.cpu usage: $(oc get resourcequota poc-quota -n "$NS" \
-        -o jsonpath='{.status.used.requests\.cpu}' 2>/dev/null || echo '?') / 2"
+    print_info "Current requests.cpu usage: $(oc get aarq poc-quota -n "$NS" \
+        -o jsonpath='{.status.used.requests\.cpu}' 2>/dev/null || echo '?') / ${QUOTA_CPU_REQUEST}"
     print_info "Attempting to create VM $VM3 (adding requests.cpu ${VM_CPU_REQUEST} → expected to exceed)"
 
     oc process -n openshift poc -p NAME="$VM3" | \
         sed 's/runStrategy: Always/runStrategy: Halted/' | sed 's/  running: false/  runStrategy: Halted/' > "${VM3}.yaml"
     echo "Generated file: ${VM3}.yaml"
 
-    # Quota exceeded when virt-launcher pod is created → VM object is created but pod cannot start
     oc apply -n "$NS" -f "${VM3}.yaml"
 
     ensure_runstrategy "$VM3" "$NS"
@@ -392,11 +420,11 @@ step_vms() {
 print_summary() {
     echo ""
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN}  Done! ResourceQuota practice environment is ready.${NC}"
+    echo -e "${GREEN}  Done! ApplicationAwareResourceQuota practice environment is ready.${NC}"
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "  ResourceQuota status:"
-    echo -e "    ${CYAN}oc describe resourcequota poc-quota -n ${NS}${NC}"
+    echo -e "  ApplicationAwareResourceQuota status:"
+    echo -e "    ${CYAN}oc get aarq poc-quota -n ${NS} -o yaml${NC}"
     echo ""
     echo -e "  VM status:"
     echo -e "    ${CYAN}oc get vm -n ${NS}${NC}"
@@ -428,7 +456,7 @@ print_summary() {
 cleanup() {
     print_step "--cleanup: Delete 06-resource-quota resources"
     oc delete project poc-resource-quota --ignore-not-found 2>/dev/null || true
-    oc delete consoleyamlsample poc-resource-quota --ignore-not-found 2>/dev/null || true
+    oc delete consoleyamlsample poc-application-aware-resource-quota --ignore-not-found 2>/dev/null || true
     print_ok "06-resource-quota resources deleted"
 }
 
@@ -438,12 +466,13 @@ cleanup() {
 main() {
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${CYAN}  ResourceQuota Practice Environment Setup${NC}"
+    echo -e "${CYAN}  ApplicationAwareResourceQuota Practice Environment Setup${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${DIM}  virt-poc ${POC_VERSION}${NC}"
 
     preflight
     step_namespace
+    step_enable_aaq
     step_quota
     step_consoleyamlsamples
     step_vms

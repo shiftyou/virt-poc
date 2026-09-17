@@ -1,6 +1,9 @@
-# ResourceQuota 실습
+# ApplicationAwareResourceQuota 실습
 
-`poc-resource-quota` namespace에 ResourceQuota를 적용하여
+표준 Kubernetes `ResourceQuota`는 Pod 수준의 리소스를 계산하므로 VM 리소스를 직접 제한할 수 없습니다.
+OpenShift Virtualization의 `ApplicationAwareResourceQuota`(AARQ)를 사용하면 VM 리소스를 정확하게 계산합니다.
+
+`poc-resource-quota` namespace에 AARQ를 적용하여
 VM 2개는 통과하고, 3번째 VM은 CPU 할당량 초과로 거부되는 것을 검증합니다.
 
 ```
@@ -35,22 +38,42 @@ VM 2개는 통과하고, 3번째 VM은 CPU 할당량 초과로 거부되는 것�
 
 ---
 
-## 적용된 ResourceQuota
+## 왜 ApplicationAwareResourceQuota인가?
+
+| | 표준 ResourceQuota | ApplicationAwareResourceQuota |
+|---|---|---|
+| 리소스 계산 | Pod 수준 | VM 인식 (virt-launcher) |
+| VM 쿼터 적용 | 간접적 (차단 안 될 수 있음) | 직접 적용 |
+| 필요 조건 | 없음 | HyperConverged CR에 `enableApplicationAwareQuota: true` |
+| API | `v1 / ResourceQuota` | `aaq.kubevirt.io/v1alpha1 / ApplicationAwareResourceQuota` |
+
+---
+
+## ApplicationAwareQuota 활성화
+
+```bash
+# HyperConverged CR에서 활성화 (1회, 클러스터 전체 적용)
+oc patch hyperconverged kubevirt-hyperconverged -n openshift-cnv \
+  --type=merge \
+  -p '{"spec":{"featureGates":{"enableApplicationAwareQuota":true}}}'
+
+# AAQ 컨트롤러 실행 확인
+oc get deployment -n openshift-cnv -l app=aaq-controller
+
+# CRD 사용 가능 확인
+oc get crd applicationawareresourcequotas.aaq.kubevirt.io
+```
+
+---
+
+## 적용된 ApplicationAwareResourceQuota
 
 | 항목 | requests | limits |
 |------|----------|--------|
-| CPU | **2 core** | 4 core |
+| CPU | **2000m** | 5 |
 | Memory | 4 Gi | 8 Gi |
-| Pod 수 | — | 10 |
-| PVC 수 | — | 10 |
-| Storage | 100 Gi | — |
-| Service | — | 10 |
-| LoadBalancer | — | 2 |
-| NodePort | — | 0 |
-| ConfigMap | — | 20 |
-| Secret | — | 20 |
 
-> `requests.cpu: "2"` (2000m) 기준 — VM당 750m일 때 → VM 2개 (1500m) 통과, VM 3개 (2250m) 초과
+> `requests.cpu: "2000m"` 기준 — VM당 750m일 때 → VM 2개 (1500m) 통과, VM 3개 (2250m) 초과
 
 ---
 
@@ -59,17 +82,21 @@ VM 2개는 통과하고, 3번째 VM은 CPU 할당량 초과로 거부되는 것�
 ### 초기 상태 확인
 
 ```bash
-# ResourceQuota 상태
-oc describe resourcequota poc-quota -n poc-resource-quota
+# AARQ 상태
+oc get aarq poc-quota -n poc-resource-quota -o yaml
 
-# 출력 예시
-# Resource                  Used    Hard
-# --------                  ----    ----
-# limits.cpu                3000m   4
-# limits.memory             4Gi     8Gi
-# requests.cpu              1500m   2       ← VM 2개 이후 1500m 사용
-# requests.memory           2Gi     4Gi
-# pods                      2       10
+# status 섹션 예시
+# status:
+#   hard:
+#     limits.cpu: "5"
+#     limits.memory: 8Gi
+#     requests.cpu: 2000m
+#     requests.memory: 4Gi
+#   used:
+#     limits.cpu: "3"
+#     limits.memory: 4Gi
+#     requests.cpu: 1500m        ← VM 2개 이후 1500m 사용
+#     requests.memory: 2Gi
 ```
 
 ### VM 상태 확인
@@ -98,7 +125,7 @@ oc get events -n poc-resource-quota --field-selector reason=FailedCreate \
 # ...  FailedCreate  ...  pods "virt-launcher-poc-quota-vm-3-..."
 #      is forbidden: exceeded quota: poc-quota,
 #      requested: requests.cpu=750m, used: requests.cpu=1500m,
-#      limited: requests.cpu=2
+#      limited: requests.cpu=2000m
 ```
 
 ### virt-launcher Pod 리소스 확인
@@ -111,14 +138,14 @@ oc get pod -n poc-resource-quota -l kubevirt.io=virt-launcher \
 
 ---
 
-## ResourceQuota 초과 테스트 (추가)
+## AARQ 초과 테스트 (추가)
 
 ```bash
 # Quota 여유분 확인
-oc describe resourcequota poc-quota -n poc-resource-quota
+oc get aarq poc-quota -n poc-resource-quota -o yaml
 
 # vm-3를 시작할 수 있도록 Quota 제한 증가
-oc patch resourcequota poc-quota -n poc-resource-quota \
+oc patch aarq poc-quota -n poc-resource-quota \
   --type=merge \
   -p '{"spec":{"hard":{"requests.cpu":"4","limits.cpu":"8"}}}'
 
@@ -126,50 +153,33 @@ oc patch resourcequota poc-quota -n poc-resource-quota \
 virtctl start poc-quota-vm-3 -n poc-resource-quota
 
 # 초과 상태를 복원하기 위해 Quota 다시 낮추기
-oc patch resourcequota poc-quota -n poc-resource-quota \
+oc patch aarq poc-quota -n poc-resource-quota \
   --type=merge \
-  -p '{"spec":{"hard":{"requests.cpu":"2","limits.cpu":"4"}}}'
+  -p '{"spec":{"hard":{"requests.cpu":"2000m","limits.cpu":"5"}}}'
 ```
 
 ---
 
-## LimitRange 함께 사용하기 (권장)
+## ApplicationAwareClusterResourceQuota
 
-ResourceQuota와 함께 LimitRange를 설정하면
-requests/limits를 지정하지 않은 Pod에 기본값이 자동으로 적용됩니다.
+여러 namespace에 걸쳐 클러스터 전체 VM 쿼터를 적용하려면 `ApplicationAwareClusterResourceQuota`를 사용합니다:
 
 ```bash
 oc apply -f - <<'EOF'
-apiVersion: v1
-kind: LimitRange
+apiVersion: aaq.kubevirt.io/v1alpha1
+kind: ApplicationAwareClusterResourceQuota
 metadata:
-  name: poc-limitrange
-  namespace: poc-resource-quota
+  name: cluster-vm-quota
 spec:
-  limits:
-    - type: Container
-      default:
-        cpu: 500m
-        memory: 512Mi
-      defaultRequest:
-        cpu: 250m
-        memory: 256Mi
-      max:
-        cpu: "2"
-        memory: 4Gi
-      min:
-        cpu: 50m
-        memory: 64Mi
-    - type: PersistentVolumeClaim
-      max:
-        storage: 50Gi
-      min:
-        storage: 1Gi
+  quota:
+    hard:
+      requests.cpu: "16"
+      requests.memory: 32Gi
+  selector:
+    labels:
+      matchLabels:
+        vm-quota: "enabled"
 EOF
-
-# LimitRange 확인
-oc get limitrange -n poc-resource-quota
-oc describe limitrange poc-limitrange -n poc-resource-quota
 ```
 
 ---
@@ -177,6 +187,6 @@ oc describe limitrange poc-limitrange -n poc-resource-quota
 ## 롤백
 
 ```bash
-# namespace 삭제 (VM, Quota, LimitRange 포함)
+# namespace 삭제 (VM, AARQ 포함)
 oc delete namespace poc-resource-quota
 ```

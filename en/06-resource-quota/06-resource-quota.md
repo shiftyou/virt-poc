@@ -1,6 +1,9 @@
-# ResourceQuota Practice
+# ApplicationAwareResourceQuota Practice
 
-Apply ResourceQuota to the `poc-resource-quota` namespace
+Standard Kubernetes `ResourceQuota` counts Pod-level resources, so it cannot directly limit VM resources.
+OpenShift Virtualization's `ApplicationAwareResourceQuota` (AARQ) properly accounts for VM resource usage.
+
+Apply AARQ to the `poc-resource-quota` namespace
 to verify that 2 VMs pass, and the 3rd VM is rejected for exceeding the CPU quota.
 
 ```
@@ -35,22 +38,42 @@ Initial state (within Quota)
 
 ---
 
-## Applied ResourceQuota
+## Why ApplicationAwareResourceQuota?
+
+| | Standard ResourceQuota | ApplicationAwareResourceQuota |
+|---|---|---|
+| Resource counting | Pod-level | VM-aware (virt-launcher) |
+| VM quota enforcement | Indirect (may not block) | Direct enforcement |
+| Requires | Nothing | `enableApplicationAwareQuota: true` in HyperConverged CR |
+| API | `v1 / ResourceQuota` | `aaq.kubevirt.io/v1alpha1 / ApplicationAwareResourceQuota` |
+
+---
+
+## Enable ApplicationAwareQuota
+
+```bash
+# Enable in HyperConverged CR (one-time, cluster-wide)
+oc patch hyperconverged kubevirt-hyperconverged -n openshift-cnv \
+  --type=merge \
+  -p '{"spec":{"featureGates":{"enableApplicationAwareQuota":true}}}'
+
+# Verify AAQ controller is running
+oc get deployment -n openshift-cnv -l app=aaq-controller
+
+# Verify CRD is available
+oc get crd applicationawareresourcequotas.aaq.kubevirt.io
+```
+
+---
+
+## Applied ApplicationAwareResourceQuota
 
 | Item | requests | limits |
 |------|----------|--------|
-| CPU | **2 core** | 4 core |
+| CPU | **2000m** | 5 |
 | Memory | 4 Gi | 8 Gi |
-| Pod count | — | 10 |
-| PVC count | — | 10 |
-| Storage | 100 Gi | — |
-| Service | — | 10 |
-| LoadBalancer | — | 2 |
-| NodePort | — | 0 |
-| ConfigMap | — | 20 |
-| Secret | — | 20 |
 
-> Based on `requests.cpu: "2"` (2000m) — VM at 750m each → 2 VMs (1500m) pass, 3 VMs (2250m) exceed
+> Based on `requests.cpu: "2000m"` — VM at 750m each → 2 VMs (1500m) pass, 3 VMs (2250m) exceed
 
 ---
 
@@ -59,17 +82,21 @@ Initial state (within Quota)
 ### Initial state check
 
 ```bash
-# ResourceQuota status
-oc describe resourcequota poc-quota -n poc-resource-quota
+# AARQ status
+oc get aarq poc-quota -n poc-resource-quota -o yaml
 
-# Example output
-# Resource                  Used    Hard
-# --------                  ----    ----
-# limits.cpu                3000m   4
-# limits.memory             4Gi     8Gi
-# requests.cpu              1500m   2       ← 1500m used after 2 VMs
-# requests.memory           2Gi     4Gi
-# pods                      2       10
+# Example status section
+# status:
+#   hard:
+#     limits.cpu: "5"
+#     limits.memory: 8Gi
+#     requests.cpu: 2000m
+#     requests.memory: 4Gi
+#   used:
+#     limits.cpu: "3"
+#     limits.memory: 4Gi
+#     requests.cpu: 1500m        ← 1500m used after 2 VMs
+#     requests.memory: 2Gi
 ```
 
 ### VM status check
@@ -98,7 +125,7 @@ oc get events -n poc-resource-quota --field-selector reason=FailedCreate \
 # ...  FailedCreate  ...  pods "virt-launcher-poc-quota-vm-3-..."
 #      is forbidden: exceeded quota: poc-quota,
 #      requested: requests.cpu=750m, used: requests.cpu=1500m,
-#      limited: requests.cpu=2
+#      limited: requests.cpu=2000m
 ```
 
 ### Check virt-launcher Pod resources
@@ -111,14 +138,14 @@ oc get pod -n poc-resource-quota -l kubevirt.io=virt-launcher \
 
 ---
 
-## ResourceQuota Exceeded Test (additional)
+## AARQ Exceeded Test (additional)
 
 ```bash
 # Check Quota headroom
-oc describe resourcequota poc-quota -n poc-resource-quota
+oc get aarq poc-quota -n poc-resource-quota -o yaml
 
 # Increase Quota limit to allow vm-3 to start
-oc patch resourcequota poc-quota -n poc-resource-quota \
+oc patch aarq poc-quota -n poc-resource-quota \
   --type=merge \
   -p '{"spec":{"hard":{"requests.cpu":"4","limits.cpu":"8"}}}'
 
@@ -126,50 +153,33 @@ oc patch resourcequota poc-quota -n poc-resource-quota \
 virtctl start poc-quota-vm-3 -n poc-resource-quota
 
 # Lower Quota again to restore exceeded state
-oc patch resourcequota poc-quota -n poc-resource-quota \
+oc patch aarq poc-quota -n poc-resource-quota \
   --type=merge \
-  -p '{"spec":{"hard":{"requests.cpu":"2","limits.cpu":"4"}}}'
+  -p '{"spec":{"hard":{"requests.cpu":"2000m","limits.cpu":"5"}}}'
 ```
 
 ---
 
-## Using LimitRange Together (recommended)
+## ApplicationAwareClusterResourceQuota
 
-Setting up LimitRange together with ResourceQuota automatically applies
-default values to Pods that don't specify requests/limits.
+For cluster-wide VM quota across multiple namespaces, use `ApplicationAwareClusterResourceQuota`:
 
 ```bash
 oc apply -f - <<'EOF'
-apiVersion: v1
-kind: LimitRange
+apiVersion: aaq.kubevirt.io/v1alpha1
+kind: ApplicationAwareClusterResourceQuota
 metadata:
-  name: poc-limitrange
-  namespace: poc-resource-quota
+  name: cluster-vm-quota
 spec:
-  limits:
-    - type: Container
-      default:
-        cpu: 500m
-        memory: 512Mi
-      defaultRequest:
-        cpu: 250m
-        memory: 256Mi
-      max:
-        cpu: "2"
-        memory: 4Gi
-      min:
-        cpu: 50m
-        memory: 64Mi
-    - type: PersistentVolumeClaim
-      max:
-        storage: 50Gi
-      min:
-        storage: 1Gi
+  quota:
+    hard:
+      requests.cpu: "16"
+      requests.memory: 32Gi
+  selector:
+    labels:
+      matchLabels:
+        vm-quota: "enabled"
 EOF
-
-# Check LimitRange
-oc get limitrange -n poc-resource-quota
-oc describe limitrange poc-limitrange -n poc-resource-quota
 ```
 
 ---
@@ -177,6 +187,6 @@ oc describe limitrange poc-limitrange -n poc-resource-quota
 ## Rollback
 
 ```bash
-# Delete namespace (including VMs, Quota, LimitRange)
+# Delete namespace (including VMs, AARQ)
 oc delete namespace poc-resource-quota
 ```

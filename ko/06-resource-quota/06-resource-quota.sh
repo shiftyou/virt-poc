@@ -2,10 +2,16 @@
 # =============================================================================
 # 06-resource-quota.sh
 #
-# ResourceQuota 실습 환경 구성
+# ApplicationAwareResourceQuota 실습 환경 구성
 #   1. poc-resource-quota namespace 생성
-#   2. CPU / Memory / Pod / PVC 등 ResourceQuota 적용
-#   3. 2개 VM 배포 (Quota 내 통과) → 3번째 VM 생성 시도 → Quota 초과로 거부
+#   2. HyperConverged CR에서 ApplicationAwareQuota 활성화
+#   3. ApplicationAwareResourceQuota 적용 (CPU / Memory 등)
+#   4. 2개 VM 배포 (Quota 내 통과) → 3번째 VM 생성 시도 → Quota 초과로 거부
+#
+# 표준 ResourceQuota는 Pod 수준의 리소스를 계산하므로 VM 리소스를 직접
+# 제한할 수 없습니다. OpenShift Virtualization의
+# ApplicationAwareResourceQuota(AARQ)를 사용하면 VM 리소스를 정확하게
+# 계산합니다.
 #
 # 사용법: ./06-resource-quota.sh
 # =============================================================================
@@ -194,7 +200,7 @@ preflight() {
 # Step 1: Namespace 생성
 # =============================================================================
 step_namespace() {
-    print_step "1/4  Namespace 생성 (${NS})"
+    print_step "1/5  Namespace 생성 (${NS})"
 
     if oc get namespace "$NS" &>/dev/null; then
         print_ok "Namespace $NS 이미 존재합니다 — 건너뜀"
@@ -211,91 +217,115 @@ step_namespace() {
 }
 
 # =============================================================================
-# Step 2: ResourceQuota 적용 (detect_node_resources에서 계산된 값 사용)
+# Step 2: HyperConverged CR에서 ApplicationAwareQuota 활성화
+# =============================================================================
+step_enable_aaq() {
+    print_step "2/5  ApplicationAwareQuota 활성화 (HyperConverged CR)"
+
+    local aaq_enabled
+    aaq_enabled=$(oc get hyperconverged kubevirt-hyperconverged -n openshift-cnv \
+        -o jsonpath='{.spec.featureGates.enableApplicationAwareQuota}' 2>/dev/null || true)
+
+    if [ "$aaq_enabled" = "true" ]; then
+        print_ok "ApplicationAwareQuota 이미 활성화됨 — 건너뜀"
+    else
+        print_info "HyperConverged CR에서 enableApplicationAwareQuota 활성화 중..."
+        oc patch hyperconverged kubevirt-hyperconverged -n openshift-cnv \
+            --type=merge \
+            -p '{"spec":{"featureGates":{"enableApplicationAwareQuota":true}}}'
+        print_ok "ApplicationAwareQuota 활성화됨"
+
+        print_info "AAQ 컨트롤러가 준비될 때까지 대기 중..."
+        local retries=0
+        while [ $retries -lt 30 ]; do
+            if oc get deployment -n openshift-cnv -l app=aaq-controller &>/dev/null 2>&1; then
+                if oc rollout status deployment -n openshift-cnv -l app=aaq-controller --timeout=10s &>/dev/null 2>&1; then
+                    break
+                fi
+            fi
+            retries=$((retries + 1))
+            sleep 5
+        done
+
+        if oc get crd applicationawareresourcequotas.aaq.kubevirt.io &>/dev/null 2>&1; then
+            print_ok "AAQ CRD 사용 가능"
+        else
+            print_warn "AAQ CRD가 아직 사용 가능하지 않습니다 — 잠시 기다립니다"
+            sleep 10
+        fi
+    fi
+}
+
+# =============================================================================
+# Step 3: ApplicationAwareResourceQuota 적용
 # =============================================================================
 step_quota() {
-    print_step "2/4  ResourceQuota 적용 (${NS})"
+    print_step "3/5  ApplicationAwareResourceQuota 적용 (${NS})"
 
-    cat > resourcequota-poc.yaml <<EOF
-apiVersion: v1
-kind: ResourceQuota
+    cat > aarq-poc.yaml <<EOF
+apiVersion: aaq.kubevirt.io/v1alpha1
+kind: ApplicationAwareResourceQuota
 metadata:
   name: poc-quota
   namespace: ${NS}
 spec:
   hard:
-    pods: "10"
     requests.cpu: "${QUOTA_CPU_REQUEST}"
     limits.cpu: "${QUOTA_CPU_LIMIT}"
     requests.memory: ${QUOTA_MEM_REQUEST}
     limits.memory: ${QUOTA_MEM_LIMIT}
-    persistentvolumeclaims: "10"
-    requests.storage: 100Gi
-    services: "10"
-    services.loadbalancers: "2"
-    services.nodeports: "0"
-    configmaps: "20"
-    secrets: "20"
 EOF
-    echo "생성된 파일: resourcequota-poc.yaml"
-    print_info "ResourceQuota poc-quota 적용 중..."
-    oc apply -f resourcequota-poc.yaml
+    echo "생성된 파일: aarq-poc.yaml"
+    print_info "ApplicationAwareResourceQuota poc-quota 적용 중..."
+    oc apply -f aarq-poc.yaml
 
-    print_ok "ResourceQuota poc-quota 적용됨"
+    print_ok "ApplicationAwareResourceQuota poc-quota 적용됨"
     print_info "  requests.cpu: ${QUOTA_CPU_REQUEST} (2개 VM × ${VM_CPU_REQUEST} = $(( VM_CPU_REQUEST_M * 2 ))m 통과, 3개 VM = $(( VM_CPU_REQUEST_M * 3 ))m 초과)"
 }
 
 # =============================================================================
-# Step 3: ConsoleYAMLSample 등록
+# Step 4: ConsoleYAMLSample 등록
 # =============================================================================
 step_consoleyamlsamples() {
-    print_step "3/4  ConsoleYAMLSample 등록"
+    print_step "4/5  ConsoleYAMLSample 등록"
 
-    cat > consoleyamlsample-resourcequota.yaml <<'EOF'
+    cat > consoleyamlsample-aarq.yaml <<'EOF'
 apiVersion: console.openshift.io/v1
 kind: ConsoleYAMLSample
 metadata:
-  name: poc-resource-quota
+  name: poc-application-aware-resource-quota
 spec:
-  title: "POC ResourceQuota Configuration"
-  description: "Limits resource usage such as CPU, Memory, Pod, and PVC in a namespace. Apply after creating the namespace. New resource creation is rejected when limits are exceeded."
+  title: "POC ApplicationAwareResourceQuota Configuration"
+  description: "VM 인식 리소스 쿼터 설정. 표준 ResourceQuota는 Pod 수준의 리소스를 계산하지만, AARQ는 VM 리소스를 정확하게 계산합니다. 먼저 HyperConverged CR에서 enableApplicationAwareQuota를 활성화해야 합니다."
   targetResource:
-    apiVersion: v1
-    kind: ResourceQuota
+    apiVersion: aaq.kubevirt.io/v1alpha1
+    kind: ApplicationAwareResourceQuota
   yaml: |
-    apiVersion: v1
-    kind: ResourceQuota
+    apiVersion: aaq.kubevirt.io/v1alpha1
+    kind: ApplicationAwareResourceQuota
     metadata:
       name: poc-quota
-      namespace: poc-resource-quota    # Change to target namespace
+      namespace: poc-resource-quota    # 대상 namespace로 변경
     spec:
       hard:
-        pods: "10"
         requests.cpu: "2000m"
         limits.cpu: "5"
         requests.memory: 4Gi
         limits.memory: 8Gi
-        persistentvolumeclaims: "10"
-        requests.storage: 100Gi
-        services: "10"
-        services.loadbalancers: "2"
-        services.nodeports: "0"
-        configmaps: "20"
-        secrets: "20"
 EOF
-    echo "생성된 파일: consoleyamlsample-resourcequota.yaml"
-    print_info "ConsoleYAMLSample poc-resource-quota 등록 중..."
-    oc apply -f consoleyamlsample-resourcequota.yaml
-    print_ok "ConsoleYAMLSample poc-resource-quota 등록됨"
+    echo "생성된 파일: consoleyamlsample-aarq.yaml"
+    print_info "ConsoleYAMLSample poc-application-aware-resource-quota 등록 중..."
+    oc apply -f consoleyamlsample-aarq.yaml
+    print_ok "ConsoleYAMLSample poc-application-aware-resource-quota 등록됨"
 }
 
 # =============================================================================
-# Step 4: VM 배포 및 Quota 초과 시연
+# Step 5: VM 배포 및 Quota 초과 시연
 #   - poc-quota-vm-1, poc-quota-vm-2: 생성 성공 (requests.cpu 합계 1500m < 2000m)
 #   - poc-quota-vm-3: 생성 시도 → Quota 초과로 거부 (2250m > 2000m)
 # =============================================================================
 step_vms() {
-    print_step "4/4  VM 배포 및 ResourceQuota 초과 시연"
+    print_step "5/5  VM 배포 및 ApplicationAwareResourceQuota 초과 시연"
 
     # VM 1, 2: 정상 생성
     for VM in poc-quota-vm-1 poc-quota-vm-2; do
@@ -346,15 +376,14 @@ step_vms() {
 
     print_info ""
     print_info "━━━ Quota 초과 시연 ━━━"
-    print_info "현재 requests.cpu 사용량: $(oc get resourcequota poc-quota -n "$NS" \
-        -o jsonpath='{.status.used.requests\.cpu}' 2>/dev/null || echo '?') / 2"
+    print_info "현재 requests.cpu 사용량: $(oc get aarq poc-quota -n "$NS" \
+        -o jsonpath='{.status.used.requests\.cpu}' 2>/dev/null || echo '?') / ${QUOTA_CPU_REQUEST}"
     print_info "VM $VM3 생성 시도 (requests.cpu ${VM_CPU_REQUEST} 추가 → 초과 예상)"
 
     oc process -n openshift poc -p NAME="$VM3" | \
         sed 's/runStrategy: Always/runStrategy: Halted/' | sed 's/  running: false/  runStrategy: Halted/' > "${VM3}.yaml"
     echo "생성된 파일: ${VM3}.yaml"
 
-    # Quota 초과는 virt-launcher Pod 생성 시 발생 → VM 오브젝트는 생성되지만 Pod 시작 불가
     oc apply -n "$NS" -f "${VM3}.yaml"
 
     ensure_runstrategy "$VM3" "$NS"
@@ -392,11 +421,11 @@ step_vms() {
 print_summary() {
     echo ""
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN}  완료! ResourceQuota 실습 환경이 준비되었습니다.${NC}"
+    echo -e "${GREEN}  완료! ApplicationAwareResourceQuota 실습 환경이 준비되었습니다.${NC}"
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "  ResourceQuota 상태:"
-    echo -e "    ${CYAN}oc describe resourcequota poc-quota -n ${NS}${NC}"
+    echo -e "  ApplicationAwareResourceQuota 상태:"
+    echo -e "    ${CYAN}oc get aarq poc-quota -n ${NS} -o yaml${NC}"
     echo ""
     echo -e "  VM 상태:"
     echo -e "    ${CYAN}oc get vm -n ${NS}${NC}"
@@ -428,7 +457,7 @@ print_summary() {
 cleanup() {
     print_step "--cleanup: 06-resource-quota 리소스 삭제"
     oc delete project poc-resource-quota --ignore-not-found 2>/dev/null || true
-    oc delete consoleyamlsample poc-resource-quota --ignore-not-found 2>/dev/null || true
+    oc delete consoleyamlsample poc-application-aware-resource-quota --ignore-not-found 2>/dev/null || true
     print_ok "06-resource-quota 리소스 삭제됨"
 }
 
@@ -438,12 +467,13 @@ cleanup() {
 main() {
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${CYAN}  ResourceQuota 실습 환경 구성${NC}"
+    echo -e "${CYAN}  ApplicationAwareResourceQuota 실습 환경 구성${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${DIM}  virt-poc ${POC_VERSION}${NC}"
 
     preflight
     step_namespace
+    step_enable_aaq
     step_quota
     step_consoleyamlsamples
     step_vms
