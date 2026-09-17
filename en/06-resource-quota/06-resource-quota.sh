@@ -465,6 +465,12 @@ cleanup() {
     print_step "--cleanup: Delete 06-resource-quota resources"
     oc delete project poc-resource-quota --ignore-not-found 2>/dev/null || true
     oc delete consoleyamlsample poc-application-aware-resource-quota --ignore-not-found 2>/dev/null || true
+
+    print_info "Disabling enableApplicationAwareQuota in HyperConverged CR..."
+    oc patch hyperconverged kubevirt-hyperconverged -n openshift-cnv \
+        --type=merge \
+        -p '{"spec":{"featureGates":{"enableApplicationAwareQuota":false}}}' 2>/dev/null || true
+
     print_ok "06-resource-quota resources deleted"
 }
 

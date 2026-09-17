@@ -466,6 +466,12 @@ cleanup() {
     print_step "--cleanup: 06-resource-quota 리소스 삭제"
     oc delete project poc-resource-quota --ignore-not-found 2>/dev/null || true
     oc delete consoleyamlsample poc-application-aware-resource-quota --ignore-not-found 2>/dev/null || true
+
+    print_info "HyperConverged CR에서 enableApplicationAwareQuota 비활성화 중..."
+    oc patch hyperconverged kubevirt-hyperconverged -n openshift-cnv \
+        --type=merge \
+        -p '{"spec":{"featureGates":{"enableApplicationAwareQuota":false}}}' 2>/dev/null || true
+
     print_ok "06-resource-quota 리소스 삭제됨"
 }
 
