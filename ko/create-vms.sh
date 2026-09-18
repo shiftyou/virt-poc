@@ -25,6 +25,7 @@ fi
 TEMPLATE_NAME="poc"
 TEMPLATE_NS="openshift"
 VM_PREFIX="poc-vm"
+STORAGE_CLASS="${STORAGE_CLASS:-}"
 
 if [ -f "${SCRIPT_DIR}/utils/common.sh" ]; then
     source "${SCRIPT_DIR}/utils/common.sh"
@@ -69,6 +70,24 @@ preflight() {
         exit 1
     fi
     print_ok "Template '${TEMPLATE_NAME}' 확인됨 (namespace: ${TEMPLATE_NS})"
+
+    # StorageClass 확인
+    if [ -z "$STORAGE_CLASS" ]; then
+        STORAGE_CLASS=$(oc get sc -o jsonpath='{.items[*].metadata.name}' 2>/dev/null | tr ' ' '\n' | \
+            grep -i "virtualization" | head -1 || true)
+        if [ -z "$STORAGE_CLASS" ]; then
+            STORAGE_CLASS=$(oc get sc -o jsonpath='{.items[*].metadata.name}' 2>/dev/null | tr ' ' '\n' | \
+                grep -i "ceph-rbd" | head -1 || true)
+        fi
+        if [ -z "$STORAGE_CLASS" ]; then
+            STORAGE_CLASS=$(oc get sc -o jsonpath='{.items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")].metadata.name}' 2>/dev/null || true)
+        fi
+    fi
+    if [ -z "$STORAGE_CLASS" ]; then
+        print_error "StorageClass를 감지할 수 없습니다. setup.sh를 먼저 실행하세요."
+        exit 1
+    fi
+    print_ok "StorageClass: ${STORAGE_CLASS}"
 }
 
 # =============================================================================
@@ -113,10 +132,11 @@ get_input() {
 
     echo ""
     print_info "설정 요약:"
-    print_info "  VM 개수      : ${VM_COUNT}"
-    print_info "  네임스페이스  : ${VM_NS}"
-    print_info "  이름 접두사   : ${VM_PREFIX}"
-    print_info "  VM 시작      : ${START_VMS}"
+    print_info "  VM 개수       : ${VM_COUNT}"
+    print_info "  네임스페이스   : ${VM_NS}"
+    print_info "  이름 접두사    : ${VM_PREFIX}"
+    print_info "  StorageClass  : ${STORAGE_CLASS}"
+    print_info "  VM 시작       : ${START_VMS}"
     echo ""
     echo -n -e "${YELLOW}  위 설정으로 진행하시겠습니까? (Y/n)${NC}: "
     read -r confirm
@@ -164,6 +184,11 @@ create_vms() {
 
         if oc process -n "$TEMPLATE_NS" "$TEMPLATE_NAME" -p NAME="$vm_name" | \
             oc apply -n "$VM_NS" -f - &>/dev/null; then
+
+            # dataVolumeTemplates에 storageClassName 주입
+            oc patch vm "$vm_name" -n "$VM_NS" --type=json -p "[
+              {\"op\":\"add\",\"path\":\"/spec/dataVolumeTemplates/0/spec/storage/storageClassName\",\"value\":\"${STORAGE_CLASS}\"}
+            ]" &>/dev/null || true
 
             # spec.running → spec.runStrategy 마이그레이션
             local running
