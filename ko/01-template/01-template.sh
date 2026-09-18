@@ -418,6 +418,7 @@ objects:
               resources:
                 requests:
                   storage: 30Gi
+              storageClassName: '\${STORAGE_CLASS}'
       runStrategy: Halted
       template:
         metadata:
@@ -479,6 +480,9 @@ parameters:
   - name: CLOUD_USER_PASSWORD
     description: Randomized password for the cloud-init user cloud-user
     value: redhat
+  - name: STORAGE_CLASS
+    description: StorageClass for the VM root disk
+    value: ${STORAGE_CLASS}
 EOF
 
 #    generate: expression

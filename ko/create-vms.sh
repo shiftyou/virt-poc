@@ -182,13 +182,9 @@ create_vms() {
 
         print_info "[${i}/${VM_COUNT}] VM ${vm_name} 생성 중..."
 
-        if oc process -n "$TEMPLATE_NS" "$TEMPLATE_NAME" -p NAME="$vm_name" | \
+        if oc process -n "$TEMPLATE_NS" "$TEMPLATE_NAME" \
+            -p NAME="$vm_name" -p STORAGE_CLASS="$STORAGE_CLASS" | \
             oc apply -n "$VM_NS" -f - &>/dev/null; then
-
-            # dataVolumeTemplates에 storageClassName 주입
-            oc patch vm "$vm_name" -n "$VM_NS" --type=json -p "[
-              {\"op\":\"add\",\"path\":\"/spec/dataVolumeTemplates/0/spec/storage/storageClassName\",\"value\":\"${STORAGE_CLASS}\"}
-            ]" &>/dev/null || true
 
             # spec.running → spec.runStrategy 마이그레이션
             local running
