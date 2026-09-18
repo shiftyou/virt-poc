@@ -6,7 +6,7 @@
 #
 # Usage: ./migrate-vms.sh [NAMESPACE]
 #   e.g.) ./migrate-vms.sh            <- interactive input
-#   e.g.) ./migrate-vms.sh poc-vm     <- migrate VMs in poc-vm namespace
+#   e.g.) ./migrate-vms.sh poc-bulk     <- migrate VMs in poc-bulk namespace
 # =============================================================================
 
 set -euo pipefail
@@ -65,9 +65,9 @@ main() {
     # Namespace input
     local ns="${1:-}"
     if [ -z "$ns" ]; then
-        echo -n -e "${YELLOW}  Namespace with VMs${NC} [default: poc-vm]: "
+        echo -n -e "${YELLOW}  Namespace with VMs${NC} [default: poc-bulk]: "
         read -r ns
-        [ -z "$ns" ] && ns="poc-vm"
+        [ -z "$ns" ] && ns="poc-bulk"
     fi
 
     if ! oc get namespace "$ns" &>/dev/null; then
@@ -118,7 +118,7 @@ main() {
             vmis_to_migrate=$(oc get vmi -n "$ns" -o jsonpath='{.items[?(@.status.phase=="Running")].metadata.name}' 2>/dev/null || true)
             ;;
         2)
-            echo -n -e "${YELLOW}  VM name pattern (e.g. poc-vm-)${NC}: "
+            echo -n -e "${YELLOW}  VM name pattern (e.g. poc-bulk-)${NC}: "
             read -r pattern
             if [ -z "$pattern" ]; then
                 print_warn "No pattern entered."

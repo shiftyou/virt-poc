@@ -6,7 +6,7 @@
 #
 # 사용법: ./delete-vms.sh [네임스페이스]
 #   예시) ./delete-vms.sh            ← 대화형 입력
-#   예시) ./delete-vms.sh poc-vm     ← poc-vm 네임스페이스의 VM 삭제
+#   예시) ./delete-vms.sh poc-bulk     ← poc-bulk 네임스페이스의 VM 삭제
 # =============================================================================
 
 set -euo pipefail
@@ -53,9 +53,9 @@ main() {
     # 네임스페이스 입력
     local ns="${1:-}"
     if [ -z "$ns" ]; then
-        echo -n -e "${YELLOW}  VM을 삭제할 네임스페이스${NC} [기본값: poc-vm]: "
+        echo -n -e "${YELLOW}  VM을 삭제할 네임스페이스${NC} [기본값: poc-bulk]: "
         read -r ns
-        [ -z "$ns" ] && ns="poc-vm"
+        [ -z "$ns" ] && ns="poc-bulk"
     fi
 
     if ! oc get namespace "$ns" &>/dev/null; then
@@ -104,7 +104,7 @@ main() {
             vms_to_delete=$(oc get vm -n "$ns" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true)
             ;;
         2)
-            echo -n -e "${YELLOW}  삭제할 VM 이름 패턴 (예: poc-vm-)${NC}: "
+            echo -n -e "${YELLOW}  삭제할 VM 이름 패턴 (예: poc-bulk-)${NC}: "
             read -r pattern
             if [ -z "$pattern" ]; then
                 print_warn "패턴이 입력되지 않았습니다."

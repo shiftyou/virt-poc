@@ -6,7 +6,7 @@
 #
 # Usage: ./create-vms.sh [VM_COUNT] [NAMESPACE]
 #   e.g.) ./create-vms.sh            <- interactive input
-#   e.g.) ./create-vms.sh 5          <- create 5 VMs in poc-vm namespace
+#   e.g.) ./create-vms.sh 5          <- create 5 VMs in poc-bulk namespace
 #   e.g.) ./create-vms.sh 3 my-ns    <- create 3 VMs in my-ns namespace
 # =============================================================================
 
@@ -24,7 +24,7 @@ fi
 
 TEMPLATE_NAME="poc"
 TEMPLATE_NS="openshift"
-VM_PREFIX="poc-vm"
+VM_PREFIX="poc-bulk"
 STORAGE_CLASS="${STORAGE_CLASS:-}"
 
 if [ -f "${SCRIPT_DIR}/utils/common.sh" ]; then
@@ -115,9 +115,9 @@ get_input() {
     if [ -n "$vm_ns_arg" ]; then
         VM_NS="$vm_ns_arg"
     else
-        echo -n -e "${YELLOW}  Namespace for VMs${NC} [default: poc-vm]: "
+        echo -n -e "${YELLOW}  Namespace for VMs${NC} [default: poc-bulk]: "
         read -r VM_NS
-        [ -z "$VM_NS" ] && VM_NS="poc-vm"
+        [ -z "$VM_NS" ] && VM_NS="poc-bulk"
     fi
 
     # VM name prefix
@@ -236,7 +236,7 @@ create_vms() {
 cleanup() {
     print_step "--cleanup: Bulk delete VMs"
 
-    local ns="${2:-poc-vm}"
+    local ns="${2:-poc-bulk}"
     echo -n -e "${YELLOW}  Delete all VMs in namespace '${ns}'? (y/N)${NC}: "
     read -r confirm
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then

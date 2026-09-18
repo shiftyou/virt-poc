@@ -6,7 +6,7 @@
 #
 # 사용법: ./create-vms.sh [VM개수] [네임스페이스]
 #   예시) ./create-vms.sh            ← 대화형 입력
-#   예시) ./create-vms.sh 5          ← poc-vm 네임스페이스에 VM 5개 생성
+#   예시) ./create-vms.sh 5          ← poc-bulk 네임스페이스에 VM 5개 생성
 #   예시) ./create-vms.sh 3 my-ns    ← my-ns 네임스페이스에 VM 3개 생성
 # =============================================================================
 
@@ -24,7 +24,7 @@ fi
 
 TEMPLATE_NAME="poc"
 TEMPLATE_NS="openshift"
-VM_PREFIX="poc-vm"
+VM_PREFIX="poc-bulk"
 STORAGE_CLASS="${STORAGE_CLASS:-}"
 
 if [ -f "${SCRIPT_DIR}/utils/common.sh" ]; then
@@ -115,9 +115,9 @@ get_input() {
     if [ -n "$vm_ns_arg" ]; then
         VM_NS="$vm_ns_arg"
     else
-        echo -n -e "${YELLOW}  VM을 생성할 네임스페이스${NC} [기본값: poc-vm]: "
+        echo -n -e "${YELLOW}  VM을 생성할 네임스페이스${NC} [기본값: poc-bulk]: "
         read -r VM_NS
-        [ -z "$VM_NS" ] && VM_NS="poc-vm"
+        [ -z "$VM_NS" ] && VM_NS="poc-bulk"
     fi
 
     # VM 이름 접두사
@@ -236,7 +236,7 @@ create_vms() {
 cleanup() {
     print_step "--cleanup: VM 일괄 삭제"
 
-    local ns="${2:-poc-vm}"
+    local ns="${2:-poc-bulk}"
     echo -n -e "${YELLOW}  네임스페이스 '${ns}'의 VM을 삭제합니다. 계속하시겠습니까? (y/N)${NC}: "
     read -r confirm
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
